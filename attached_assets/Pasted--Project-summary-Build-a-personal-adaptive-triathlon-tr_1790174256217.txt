@@ -1,0 +1,86 @@
+## Project summary
+
+Build a personal adaptive triathlon training web app, initially for Allen’s own use and potentially later for a small group of 2–4 athlete testers. The project should be useful as a real personal tool and substantial enough to demonstrate product thinking and engineering skills in a portfolio/resume.
+
+The initial sport and event focus is triathlon, with 70.3 as the first target distance. However, the first development phase is the app foundation and core functionality—not a scientifically complete 70.3 coaching engine. Keep the system extensible to other distances, sports, and athletes later.
+
+## Product vision
+
+Help an athlete organize training, understand their training/recovery context, and make thoughtful adjustments toward a goal. The coach should incorporate both measurable data and what the athlete says about how they feel. It should explain proposed changes and require athlete approval.
+
+## Current product decisions
+
+- **Initial user:** One athlete (the project owner), with architecture that could later support a few invited test athletes.
+- **Initial sport and event:** Triathlon, with 70.3 as the first intended event type.
+- **Platform:** Website first; make it responsive and usable on mobile-sized screens.
+- **Training data integration to investigate first:** Intervals.icu. It appears to offer a personal API key for accessing one’s own data, as well as OAuth for multi-user apps. Validate exact API access, data coverage, terms, and implementation requirements before building the integration.
+- **Coaching interaction:** The coach recommends changes with reasoning. The athlete can approve, edit, or dismiss them; it should not silently alter workouts.
+- **Goal planning:** The eventual coach should create a rudimentary plan based on a user-entered goal, such as a race, FTP target, or mile time. Triathlon 70.3 is the first planned focus.
+- **Build sequence:** Establish app basics and core functionality before investing in detailed coaching science or an advanced training-plan generator.
+- **Design direction:** Calm, polished health-and-performance product. WHOOP and Bevel are visual/product references for clarity and hierarchy, not designs to copy.
+
+## Initial app foundation (scope now)
+
+Build the core website experience and structure, with sample/demo data where integrations are not yet connected:
+
+1. **Athlete home/dashboard:** Today’s planned session, recent training context, key metrics when available, upcoming sessions, and goal progress.
+2. **Training calendar:** A weekly view of planned sessions across swim, bike, and run, with clear completion/planned states.
+3. **Athlete profile and goal:** Basic profile, sport, target event/distance/date, training availability, and preferences.
+4. **Data connection settings:** Intervals.icu connection state and a clear description of what is connected, last sync, and missing data. Do not expose API secrets in the browser.
+5. **Manual feedback/check-ins:** Allow the athlete to report fatigue, stress, soreness, illness, or other context that may not appear in wearable metrics.
+6. **Recommendation review interface:** Show a proposed workout adjustment, what triggered it, what would change, and why. Provide approve/edit/dismiss actions. Use clearly labeled illustrative/sample recommendations until validated adjustment rules exist.
+7. **Plan and change history:** Show the current plan and explain/record approved changes so the athlete can see what changed and when.
+8. **Responsive, accessible presentation:** Prioritize legibility, clear state, usable navigation, and touch-friendly controls.
+
+## Coaching behavior (later phase; principles to preserve)
+
+The app should not overreact to normal day-to-day variation. One bad workout by itself should generally not trigger a major plan change or rewrite the whole week. It can prompt a brief check-in, while preserving the plan absent additional evidence or athlete context.
+
+When there is a pattern of missed workouts or concerning changes across several signals, the coach may suggest small, targeted and reversible adjustments—such as moving a session or reducing its intensity. It should explain the evidence and preserve the intent of the larger training block where possible.
+
+Athlete feedback can override what metrics appear to show. For example, if the athlete reports feeling ill, unusually stressed, or that their body feels wrong, the coach should acknowledge that input and suggest an appropriately cautious adjustment even if wearable metrics look normal. It should ask for context when needed.
+
+## Training-material quality (later phase)
+
+A plan generator should not invent workouts and present them as validated coaching. Build from a modest library of human-reviewed plan templates, workouts, and progression/adjustment rules. Research reputable public sources, capture provenance, and have the resulting rules/material reviewed before relying on them. Avoid copying paid plans or treating arbitrary internet content as authoritative. Clearly distinguish reviewed content from experimental or illustrative material.
+
+Start with a bounded 70.3 use case and expand only as the evidence base and validation support it. Detailed source research, coaching thresholds, and plan-quality validation are explicitly later work.
+
+## Data to consider
+
+Potential inputs include planned and completed sessions, sport, duration, volume/intensity/training load, sleep, HRV, resting heart rate, steps, calories/energy expenditure, hydration, and subjective fatigue, stress, soreness, illness, readiness, and session rating. Actual availability depends on Intervals.icu and connected upstream services; verify field-by-field. Do not make the core app depend on every metric being present. Provide sensible missing-data states and manual input for useful subjective context.
+
+Wearable metrics are imperfect signals. Treat them as context rather than medical diagnoses or unquestionable instructions. Include appropriate boundaries for illness, pain, and concerning symptoms.
+
+## Intervals.icu integration notes
+
+Intervals.icu’s public API information indicates support for personal API-key access and OAuth-based third-party apps; API capabilities include activities, wellness fields, calendar/planned workouts, and webhooks. Personal API-key access is suitable to investigate for a single-user prototype. If the project is shared with other athletes, plan to move to OAuth and use appropriate user authorization rather than asking friends for their API keys. Keep credentials server-side, request only needed scopes, and verify the current API documentation and terms during implementation.
+
+## Refined project prompt
+
+> Build a responsive personal triathlon training web app, initially for one athlete and designed so it can later be tested by a small group of invited athletes. The first intended event focus is a 70.3 triathlon, but the current phase is to establish the app foundation and core functionality rather than implement advanced coaching science.
+> 
+
+> 
+> 
+
+> Create a polished athlete experience with a dashboard, swim/bike/run training calendar, profile and goal setup, manual check-ins, plan/change history, and settings for a future Intervals.icu connection. Use clearly labeled sample data until real integration is implemented. Show useful empty, loading, connected, and error states. Keep integration credentials secure on the server.
+> 
+
+> 
+> 
+
+> Include a recommendation review flow in which a proposed change explains what it would change and why, then lets the athlete approve, edit, or dismiss it. Do not silently alter the plan. Preserve the ability for subjective reports—such as illness, stress, soreness, or feeling unusually unwell—to inform recommendations even when device metrics look normal.
+> 
+
+> 
+> 
+
+> Keep detailed plan generation and training rules out of the initial foundation phase. When coaching is added, assemble plans from human-reviewed and traceable templates/rules, not free-form invented workouts. Treat one poor workout as normal variation; do not make major plan changes from a single datapoint. Prefer small, targeted, explainable changes when a pattern or athlete feedback warrants them.
+> 
+
+> 
+> 
+
+> Use WHOOP and Bevel as general references for a clear, polished health-and-performance interface, without copying their designs. Build the foundation to be useful personally and demonstrate sound product and engineering judgment in a resume/portfolio project.
+>
