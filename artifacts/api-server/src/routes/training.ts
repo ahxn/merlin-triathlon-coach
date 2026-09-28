@@ -113,6 +113,27 @@ router.post("/athletes/:athleteId/check-ins", asyncRoute(async (req, res) => {
   res.json(checkIn);
 }));
 
+router.patch("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req, res) => {
+  const athleteId = athleteIdFrom(req.params.athleteId);
+  const checkInId = athleteIdFrom(req.params.checkInId);
+  if (!athleteId || !checkInId) return void res.status(400).json({ error: "Invalid id" });
+  const parsed = insertCheckInSchema.partial().safeParse({ ...req.body, athleteId });
+  if (!parsed.success) return void res.status(400).json({ error: "Invalid check-in", issues: parsed.error.issues });
+  const [checkIn] = await db.update(checkIns).set({ ...parsed.data, updatedAt: new Date() })
+    .where(and(eq(checkIns.id, checkInId), eq(checkIns.athleteId, athleteId))).returning();
+  if (!checkIn) return void res.status(404).json({ error: "Check-in not found" });
+  res.json(checkIn);
+}));
+
+router.delete("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req, res) => {
+  const athleteId = athleteIdFrom(req.params.athleteId);
+  const checkInId = athleteIdFrom(req.params.checkInId);
+  if (!athleteId || !checkInId) return void res.status(400).json({ error: "Invalid id" });
+  const [deleted] = await db.delete(checkIns).where(and(eq(checkIns.id, checkInId), eq(checkIns.athleteId, athleteId))).returning({ id: checkIns.id });
+  if (!deleted) return void res.status(404).json({ error: "Check-in not found" });
+  res.status(204).send();
+}));
+
 router.get("/athletes/:athleteId/recommendations", asyncRoute(async (req, res) => {
   const athleteId = athleteIdFrom(req.params.athleteId);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });

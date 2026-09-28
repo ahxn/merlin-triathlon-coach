@@ -37,7 +37,7 @@ export const athletes = pgTable("athletes", {
   email: text("email"),
   timezone: text("timezone").default("America/New_York").notNull(),
   availabilityDays: text("availability_days").array().default([]).notNull(),
-  preferences: jsonb("preferences").$type<{ coachTone: string; notifications: boolean }>().default({ coachTone: "Warm + direct", notifications: true }).notNull(),
+  preferences: jsonb("preferences").$type<{ coachTone: string; notifications: boolean; plan?: Record<string, unknown> }>().default({ coachTone: "Warm + direct", notifications: true }).notNull(),
   ...timestamps,
 }, (table) => [uniqueIndex("athletes_email_unique").on(table.email)]);
 

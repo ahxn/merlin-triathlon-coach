@@ -255,6 +255,50 @@
   --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0);
 }
 
+
+/* User-selectable interface palettes. */
+:root[data-color-theme="ocean"] {
+  --background: 210 36% 96%; --foreground: 214 35% 17%; --border: 210 24% 85%;
+  --card: 0 0% 100%; --card-foreground: 214 35% 17%; --card-border: 210 24% 85%;
+  --sidebar: 216 43% 16%; --sidebar-foreground: 210 40% 94%; --sidebar-border: 214 31% 28%;
+  --sidebar-primary: 193 72% 64%; --sidebar-primary-foreground: 214 43% 15%; --sidebar-accent: 214 35% 23%; --sidebar-accent-foreground: 210 40% 94%; --sidebar-ring: 193 72% 64%;
+  --popover: 0 0% 100%; --popover-foreground: 214 35% 17%; --popover-border: 210 24% 85%;
+  --primary: 215 41% 24%; --primary-foreground: 210 40% 96%; --secondary: 209 36% 90%; --secondary-foreground: 215 41% 24%;
+  --muted: 210 27% 92%; --muted-foreground: 212 14% 44%; --accent: 192 79% 58%; --accent-foreground: 215 42% 16%; --input: 210 24% 82%; --ring: 192 79% 58%;
+  --chart-1: 215 41% 34%; --chart-2: 192 79% 58%; --chart-3: 45 65% 58%; --chart-4: 155 36% 52%; --chart-5: 204 59% 65%;
+}
+:root[data-color-theme="forest"] {
+  --background: 105 25% 96%; --foreground: 150 27% 17%; --border: 120 17% 85%;
+  --card: 0 0% 100%; --card-foreground: 150 27% 17%; --card-border: 120 17% 85%;
+  --sidebar: 150 35% 15%; --sidebar-foreground: 110 30% 94%; --sidebar-border: 148 25% 27%;
+  --sidebar-primary: 91 43% 66%; --sidebar-primary-foreground: 150 38% 14%; --sidebar-accent: 150 28% 22%; --sidebar-accent-foreground: 110 30% 94%; --sidebar-ring: 91 43% 66%;
+  --popover: 0 0% 100%; --popover-foreground: 150 27% 17%; --popover-border: 120 17% 85%;
+  --primary: 150 34% 23%; --primary-foreground: 110 30% 96%; --secondary: 115 28% 90%; --secondary-foreground: 150 34% 23%;
+  --muted: 115 23% 92%; --muted-foreground: 145 13% 43%; --accent: 92 42% 57%; --accent-foreground: 150 42% 13%; --input: 120 17% 82%; --ring: 92 42% 57%;
+  --chart-1: 150 34% 30%; --chart-2: 92 42% 57%; --chart-3: 45 65% 58%; --chart-4: 173 32% 48%; --chart-5: 204 50% 61%;
+}
+:root[data-color-theme="ember"] {
+  --background: 26 45% 96%; --foreground: 16 28% 19%; --border: 22 25% 86%;
+  --card: 35 55% 99%; --card-foreground: 16 28% 19%; --card-border: 22 25% 86%;
+  --sidebar: 14 31% 17%; --sidebar-foreground: 30 42% 94%; --sidebar-border: 14 24% 29%;
+  --sidebar-primary: 19 71% 69%; --sidebar-primary-foreground: 15 36% 17%; --sidebar-accent: 14 26% 24%; --sidebar-accent-foreground: 30 42% 94%; --sidebar-ring: 19 71% 69%;
+  --popover: 35 55% 99%; --popover-foreground: 16 28% 19%; --popover-border: 22 25% 86%;
+  --primary: 16 32% 26%; --primary-foreground: 30 42% 96%; --secondary: 25 39% 91%; --secondary-foreground: 16 32% 26%;
+  --muted: 24 28% 92%; --muted-foreground: 18 13% 45%; --accent: 18 69% 62%; --accent-foreground: 15 42% 17%; --input: 22 25% 82%; --ring: 18 69% 62%;
+  --chart-1: 16 32% 31%; --chart-2: 18 69% 62%; --chart-3: 45 65% 58%; --chart-4: 155 30% 48%; --chart-5: 204 45% 62%;
+}
+
+input.hide-number-controls[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input.hide-number-controls[type="number"]::-webkit-inner-spin-button,
+input.hide-number-controls[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -381,9 +425,9 @@ html { scroll-behavior: smooth; }
 body { min-width: 320px; background: hsl(var(--background)); }
 button, input, select, textarea { font: inherit; }
 ::selection { background: hsl(var(--accent) / .28); }
-.app-shell { min-height: 100dvh; background:
-  radial-gradient(circle at 84% 2%, hsl(15 76% 69% / .11), transparent 25rem),
-  radial-gradient(circle at 12% 45%, hsl(184 34% 35% / .06), transparent 28rem),
+.app-shell { position: relative; min-height: 100dvh; background:
+  radial-gradient(circle at 84% 2%, hsl(var(--accent) / .11), transparent 25rem),
+  radial-gradient(circle at 12% 45%, hsl(var(--primary) / .06), transparent 28rem),
   hsl(var(--background)); }
 .display { font-family: var(--app-font-serif); letter-spacing: -0.04em; }
 .mono { font-family: var(--app-font-mono); letter-spacing: .02em; }
@@ -393,8 +437,11 @@ button, input, select, textarea { font: inherit; }
 .nav-link { transition: color .2s ease, background-color .2s ease, transform .2s ease; }
 .nav-link:hover { transform: translateX(2px); }
 .fade-up { animation: fade-up .55s cubic-bezier(.2,.75,.25,1) both; }
+.page-refocus { animation: page-refocus .55s cubic-bezier(.2,.75,.25,1) both; }
 .delay-1 { animation-delay: .07s; } .delay-2 { animation-delay: .14s; } .delay-3 { animation-delay: .21s; }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes page-refocus { from { opacity: .72; filter: blur(3px); transform: translateY(6px) scale(.995); } to { opacity: 1; filter: blur(0); transform: translateY(0) scale(1); } }
+@media (prefers-reduced-motion: reduce) { .page-refocus { animation: none; } }
 .pulse-dot { animation: pulse-dot 2.8s ease-in-out infinite; }
 @keyframes pulse-dot { 0%,100% { box-shadow: 0 0 0 0 hsl(var(--accent) / .3); } 50% { box-shadow: 0 0 0 6px hsl(var(--accent) / 0); } }
 .scrollbar-thin::-webkit-scrollbar { width: 5px; height: 5px; }
