@@ -105,7 +105,7 @@ export const trainingExamples: TrainingExample[] = [
     workload: "Small amateur sample",
     sourceKind: "observational study",
     observation: "A small study compared polarized and pyramidal training-intensity patterns in amateur half-Ironman athletes.",
-    application: "Keep most easy sessions genuinely easy and make harder work deliberate; the app does not assume one distribution wins for everyone.",
+    application: "Keep most aerobic sessions comfortable and make harder work deliberate; the app does not assume one distribution wins for everyone.",
     caution: "Small sample and observational comparisons limit causal conclusions.",
     sourceUrl: "https://pmc.ncbi.nlm.nih.gov/articles/PMC6873141/"
   },
@@ -162,10 +162,10 @@ export const trainingExamples: TrainingExample[] = [
     workload: "12 trained male cyclists; about 6–8 hours weekly",
     sourceKind: "intervention study",
     observation: "In a small crossover study, the polarized block improved several measured endurance outcomes more than the threshold-focused block.",
-    application: "Use a clear contrast between easy volume and selected quality work; don’t turn every ride into moderate-hard training.",
+    application: "Use a clear contrast between aerobic volume and selected quality work; don’t turn every ride into moderate-hard training.",
     caution: "Small, trained-male sample and short blocks do not identify the best plan for every cyclist.",
     sourceUrl: "https://pubmed.ncbi.nlm.nih.gov/23264537/",
-    templateCue: "Keep endurance rides conversational and reserve controlled intervals for selected sessions."
+    templateCue: "Keep endurance rides conversational and reserve harder intervals for selected sessions."
   },
   {
     id: "cadence-training-mixed-evidence",
@@ -191,12 +191,12 @@ export const trainingExamples: TrainingExample[] = [
     phase: "Annual and weekly preparation",
     workload: "Interviews with 12 experienced coaches across endurance sports",
     sourceKind: "coach interviews",
-    observation: "Coaches described sport-specific session models, many easy aerobic sessions, and carefully controlled harder work; some use double-threshold days with elite athletes.",
-    statedReasoning: "The coaches emphasized controlling total load: keep recovery training easy and regulate demanding sessions to the athlete and sport.",
-    application: "Separate easy and demanding sessions and keep any advanced double-session strategy out of general templates.",
+    observation: "Coaches described sport-specific session models, many aerobic sessions, and carefully controlled harder work; some use double-threshold days with elite athletes.",
+    statedReasoning: "The coaches emphasized controlling total load: keep recovery training relaxed and regulate demanding sessions to the athlete and sport.",
+    application: "Separate relaxed and demanding sessions and keep any advanced double-session strategy out of general templates.",
     caution: "Coach interviews describe elite practice, not comparative proof or a safe plan for recreational athletes.",
     sourceUrl: "https://pmc.ncbi.nlm.nih.gov/articles/PMC11560996/",
-    templateCue: "Keep this easy session easy; advanced double-threshold patterns are not part of a default plan."
+    templateCue: "Keep this session relaxed; advanced double-threshold patterns are not part of a default plan."
   },
 ];
 
@@ -239,5 +239,5 @@ export function trainingTemplateCue(sport: Sport, quality: boolean) {
   }
   return quality
     ? "Keep this effort controlled; double-threshold days belong to advanced, monitored training and are not assumed here."
-    : "Keep easy running conversational; build its volume from your own recent run history.";
+    : "Keep aerobic running conversational; build its volume from your own recent run history.";
 }

@@ -1,6 +1,8 @@
 import type { PlanPreferences } from "./data-api";
 import { trainingTemplateCue } from "./training-examples";
 import { recentMetersPerSecond } from "./workout-display";
+import { formatRunPace, getRunRepPace } from "./run-training-paces";
+import { heartRateZoneTarget } from "./heart-rate-zones";
 
 type PlannedSession = PlanPreferences["manualSessions"][number];
 type Sport = PlannedSession["sport"];
@@ -8,6 +10,20 @@ type RecentSession = { sport: string; date: string; duration: string; status: st
 
 const roundToFive = (value: number) => Math.max(5, Math.round(value / 5) * 5);
 const titleCase = (value: string) => `${value[0].toUpperCase()}${value.slice(1)}`;
+const formatSeconds = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+export function workoutFocusLabel(sport: Sport, quality: boolean, swimVariant: "technique" | "endurance") {
+  if (quality) return sport === "bike" ? "Threshold" : sport === "run" ? "Speed" : "Steady";
+  if (sport === "swim") return swimVariant === "technique" ? "Technique" : "Aerobic";
+  return "Zone 2";
+}
+
+function sessionMinutes(session: PlannedSession) {
+  if (typeof session.durationMinutes === "number" && Number.isFinite(session.durationMinutes) && session.durationMinutes > 0) {
+    return session.durationMinutes;
+  }
+  return durationToMinutes(session.duration) ?? 30;
+}
 
 function distanceToKilometers(sport: Sport, distance: number, unit: string) {
   if (sport === "swim") return unit === "m" ? distance / 1000 : distance * 0.0009144;
@@ -31,42 +47,73 @@ export function weeklyTargetMinutes(plan: PlanPreferences, sport: Sport, level: 
 }
 
 export function recommendedSessionCap(plan: PlanPreferences, sport: Sport, quality = false) {
-  const ordinaryLimits = { swim: 60, bike: 120, run: 60 };
+  const ordinaryLimits = { swim: 60, bike: 120, run: 75 };
   const qualityLimits = { swim: 45, bike: 75, run: 45 };
   const limit = quality ? qualityLimits[sport] : ordinaryLimits[sport];
-  return Math.min(plan.maxSessionMinutes || 90, limit);
+  return Math.min(Math.max(15, plan.maxSessionMinutes || 90), limit);
 }
 
 export function workoutDetails(plan: PlanPreferences, sport: Sport, minutes: number, quality: boolean, distanceTarget: number, distanceUnit: string, swimVariant: "technique" | "endurance" = "technique") {
-  const warmup = Math.min(10, Math.max(5, roundToFive(minutes * 0.2)));
-  const cooldown = Math.min(5, Math.max(3, roundToFive(minutes * 0.1)));
+  const warmup = minutes < 20 ? 3 : Math.min(10, Math.max(5, roundToFive(minutes * 0.2)));
+  const cooldown = Math.min(5, Math.max(3, Math.round(minutes * 0.1)));
   const mainMinutes = Math.max(5, minutes - warmup - cooldown);
   const swimRepDistance = intervalRepDistance("swim", plan.distanceTargets.swim.unit);
   let mainSet: string;
 
-  if (quality && minutes >= 40) {
+  if (quality && minutes >= 15) {
     if (sport === "run") {
-      mainSet = "4 × 2 minutes at controlled, comfortably hard effort (RPE 6/10), with 2 minutes easy jogging between repetitions.";
+      const recovery = plan.runIntervalRecoverySeconds ?? { short: 60, medium: 90, long: 120 };
+      const repSeconds = minutes < 20 ? 60 : 2 * 60;
+      const recoverySeconds = minutes < 20 ? 60 : repSeconds <= 90 ? 30 : repSeconds <= 270 ? recovery.short : repSeconds <= 480 ? recovery.medium : repSeconds < 780 ? recovery.long : 180;
+      const unit = plan.distanceTargets.run.unit;
+      const targetPace = getRunRepPace(plan.easyRunPaceSecondsPerKm, repSeconds, unit);
+      const effort = targetPace ? `${targetPace.label} (${targetPace.formatted})` : "a fast, controlled interval effort";
+      mainSet = `4 × ${formatSeconds(repSeconds)} at ${effort}, with ${formatSeconds(recoverySeconds)} recovery jogging between repetitions.`;
     } else if (sport === "bike") {
-      mainSet = "4 × 4 minutes at controlled, comfortably hard effort (RPE 6/10), with 3 minutes easy spinning between repetitions.";
+      const ftpTarget = plan.ftpWatts
+        ? ` at 95–105% FTP (${Math.round(plan.ftpWatts * 0.95)}–${Math.round(plan.ftpWatts * 1.05)} W)`
+        : " at threshold effort";
+      mainSet = minutes < 20
+        ? `4 × 1 minute${ftpTarget}, with 1 minute relaxed spinning between repetitions.`
+        : minutes < 25
+          ? `3 × 3 minutes${ftpTarget}, with 1:30 relaxed spinning between repetitions.`
+          : minutes < 32
+            ? `4 × 3 minutes${ftpTarget}, with 1:30 relaxed spinning between repetitions.`
+            : minutes < 40
+              ? `4 × 4 minutes${ftpTarget}, with 1:30 relaxed spinning between repetitions.`
+              : `4 × 4 minutes${ftpTarget}, with 3 minutes relaxed spinning between repetitions.`;
     } else {
-      mainSet = `8 × ${swimRepDistance} at smooth, steady effort (RPE 5–6/10), with 20–30 seconds rest. Keep technique relaxed.`;
+      const repetitions = minutes < 25 ? 4 : 8;
+      mainSet = `${repetitions} × ${swimRepDistance} at a smooth, steady effort, with 20–30 seconds rest. Keep technique relaxed.`;
     }
   } else if (sport === "swim" && swimVariant === "endurance") {
-    mainSet = `Swim at a relaxed, conversational effort (RPE 3–4/10), keeping a steady rhythm. Swim continuously or break the time into repeats of ${swimRepDistance}; rest briefly to keep your form smooth.`;
+    mainSet = `Swim at a relaxed, conversational effort, keeping a steady rhythm. Swim continuously or break the time into repeats of ${swimRepDistance}; rest briefly to keep your form smooth.`;
   } else if (sport === "swim") {
-    mainSet = `Swim relaxed lengths at conversational effort (RPE 3–4/10). Include 6 × ${swimRepDistance.replace(/^50/, "25")} of easy technique practice, resting as needed to keep form smooth.`;
+    mainSet = `Swim relaxed lengths at a conversational effort. Include 6 × ${swimRepDistance.replace(/^50/, "25")} of relaxed technique practice, resting as needed to keep form smooth.`;
   } else if (sport === "run") {
-    mainSet = `Stay at an easy, conversational effort (RPE 3–4/10) for ${mainMinutes} minutes. Take brief walking breaks whenever needed to keep the effort controlled.`;
+    const maxHeartRate = plan.maxHeartRate;
+    const zoneTwoTarget = heartRateZoneTarget(maxHeartRate, 2, plan.heartRateZoneUpperBounds?.run);
+    const heartRateGuide = zoneTwoTarget ? ` If you train by heart rate, aim for Zone 2 (${zoneTwoTarget}); adjust to your personal zones and how you feel.` : "";
+    const easyPaceGuide = plan.easyRunPaceSecondsPerKm
+      ? ` Run at or slower than ${formatRunPace(plan.easyRunPaceSecondsPerKm, plan.distanceTargets.run.unit)}.`
+      : "";
+    mainSet = `Stay at a relaxed, conversational effort for ${mainMinutes} minutes. Take brief walking breaks whenever needed to keep the effort controlled.${easyPaceGuide}${heartRateGuide}`;
+  } else if (sport === "bike") {
+    const powerGuide = plan.ftpWatts
+      ? ` Aim for 56–75% FTP (${Math.round(plan.ftpWatts * 0.56)}–${Math.round(plan.ftpWatts * 0.75)} W) as a Zone 2 guide.`
+      : "";
+    const heartRateGuide = heartRateZoneTarget(plan.maxHeartRate, 2, plan.heartRateZoneUpperBounds?.bike);
+    const heartRateCue = heartRateGuide ? ` Heart-rate guide: Zone 2 (${heartRateGuide}).` : "";
+    mainSet = `Ride steadily at an aerobic, conversational effort for ${mainMinutes} minutes.${powerGuide}${heartRateCue} Keep the effort controlled and finish feeling able to continue.`;
   } else {
-    mainSet = `Stay at an easy, conversational effort (RPE 3–4/10) for ${mainMinutes} minutes. Keep the effort controlled and finish feeling able to continue.`;
+    mainSet = `Stay at a relaxed, conversational effort for ${mainMinutes} minutes. Keep the effort controlled and finish feeling able to continue.`;
   }
 
   const total = plan.volumeBasis === "distance"
     ? `Approximate session target: ${Number(distanceTarget.toFixed(sport === "swim" ? 0 : 1))} ${distanceUnit}. Estimated time is a guide based on typical speeds; adjust to your own pace.`
     : `Planned duration: ${minutes} minutes.`;
-  const warmDescription = sport === "swim" ? "easy swimming" : sport === "bike" ? "easy spinning" : "easy walking or jogging";
-  const cooldownDescription = sport === "swim" ? "easy swimming" : sport === "bike" ? "easy spinning" : "easy jogging or walking";
+  const warmDescription = sport === "swim" ? "relaxed swimming" : sport === "bike" ? "relaxed spinning" : "relaxed walking or jogging";
+  const cooldownDescription = sport === "swim" ? "relaxed swimming" : sport === "bike" ? "relaxed spinning" : "relaxed jogging or walking";
   const templateCue = trainingTemplateCue(sport, quality);
   return `${total}\nWarm-up: ${warmup} minutes of ${warmDescription}.\nMain set: ${mainSet}\nCool-down: ${cooldown} minutes of ${cooldownDescription}.${templateCue ? `\nTemplate note: ${templateCue}` : ""}`;
 }
@@ -78,25 +125,86 @@ const draftDayOrder = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function buildInitialWeeklySchedule(plan: PlanPreferences) {
   const requestedCount = Math.min(14, Math.max(3, Math.round(plan.sessionsPerWeek || 6)));
   const sports: Sport[] = ["swim", "bike", "run"];
-  const sessions: PlannedSession[] = [];
-  for (const sport of sports) {
-    const requiredSportSession = plan.manualSessions.find((session) => session.sport === sport);
-    if (requiredSportSession && sessions.length < requestedCount) sessions.push({ ...requiredSportSession });
-  }
-  for (const existing of plan.manualSessions) {
-    if (sessions.length >= requestedCount) break;
-    if (!sessions.some((session) => session.id === existing.id)) sessions.push({ ...existing });
-  }
-  const counts = new Map<Sport, number>(sports.map((sport) => [sport, sessions.filter((session) => session.sport === sport).length]));
   const balancedFocus = plan.primaryFocus === "balanced";
   const runFocused = plan.primaryFocus === "run";
+  const scheduleCount = balancedFocus ? Math.min(requestedCount, 9) : requestedCount;
+  const targetCounts = new Map<Sport, number>();
+  if (balancedFocus) {
+    if (requestedCount >= 9) {
+      // Keep the core bike/run structure to one quality, one aerobic, and one
+      // long workout. Extra available slots should not fragment either sport's
+      // weekly volume into another short endurance session.
+      targetCounts.set("bike", 3);
+      targetCounts.set("run", 3);
+      targetCounts.set("swim", 3);
+    } else {
+      const base = Math.floor(requestedCount / sports.length);
+      for (const sport of sports) targetCounts.set(sport, base);
+      const extraOrder: Sport[] = ["bike", "run", "swim"];
+      for (let extra = requestedCount % sports.length, index = 0; extra > 0; extra--, index++) {
+        const sport = extraOrder[index % extraOrder.length];
+        targetCounts.set(sport, (targetCounts.get(sport) ?? 0) + 1);
+      }
+    }
+
+    // A third session only adds value when two sessions cannot reasonably carry
+    // that sport's weekly target. In particular, avoid splitting a low-volume
+    // bike week into intervals, a long ride, and a short extra endurance ride.
+    for (const sport of sports) {
+      const twoSessionCapacity = sport === "swim"
+        ? recommendedSessionCap(plan, sport) * 2
+        : recommendedSessionCap(plan, sport, true) + recommendedSessionCap(plan, sport);
+      if (weeklyTargetMinutes(plan, sport) <= twoSessionCapacity) {
+        targetCounts.set(sport, Math.min(targetCounts.get(sport) ?? 0, 2));
+      }
+    }
+  }
+  const sessions: PlannedSession[] = [];
+  const sessionPreference = (sport: Sport, session: PlannedSession) => {
+    const interval = session.quality || /interval/i.test(session.title) ? 1 : 0;
+    const preferredLongDay = sport === "bike" ? plan.longBikeDay : sport === "run" ? plan.longRunDay : "";
+    const longDay = preferredLongDay && session.day === preferredLongDay ? 1 : 0;
+    return [interval, longDay, sessionMinutes(session)];
+  };
+  for (const sport of sports) {
+    const candidate = plan.manualSessions
+      .filter((session) => session.sport === sport)
+      .sort((a, b) => {
+        const aPriority = sessionPreference(sport, a);
+        const bPriority = sessionPreference(sport, b);
+        return bPriority[0] - aPriority[0] || bPriority[1] - aPriority[1] || bPriority[2] - aPriority[2];
+      })[0];
+    if (candidate && sessions.length < scheduleCount) sessions.push({ ...candidate });
+  }
+  if (balancedFocus) {
+    for (const sport of sports) {
+      const sportCount = sessions.filter((session) => session.sport === sport).length;
+      const quota = targetCounts.get(sport) ?? 0;
+      const candidates = plan.manualSessions
+        .filter((session) => session.sport === sport && !sessions.some((selected) => selected.id === session.id))
+        .sort((a, b) => {
+          const aPriority = sessionPreference(sport, a);
+          const bPriority = sessionPreference(sport, b);
+          return bPriority[0] - aPriority[0] || bPriority[1] - aPriority[1] || bPriority[2] - aPriority[2];
+        });
+      for (const candidate of candidates.slice(0, Math.max(0, quota - sportCount))) sessions.push({ ...candidate });
+    }
+  } else {
+    for (const existing of plan.manualSessions) {
+      if (sessions.length >= scheduleCount) break;
+      if (sessions.some((session) => session.id === existing.id)) continue;
+      sessions.push({ ...existing });
+    }
+  }
+  const counts = new Map<Sport, number>(sports.map((sport) => [sport, sessions.filter((session) => session.sport === sport).length]));
   if (balancedFocus) {
     while ((counts.get("run") ?? 0) > (counts.get("bike") ?? 0) && (counts.get("run") ?? 0) > 1) {
-      const runSession = [...sessions].reverse().find((session) => session.sport === "run");
+      const runSession = [...sessions].reverse().find((session) => session.sport === "run" && !session.quality && !/interval/i.test(session.title));
       if (!runSession) break;
       runSession.sport = "bike";
       runSession.title = "Bike session";
       runSession.duration = "";
+      runSession.durationOverrideMinutes = undefined;
       runSession.intensity = "Endurance";
       runSession.quality = false;
       counts.set("run", (counts.get("run") ?? 0) - 1);
@@ -104,11 +212,12 @@ export function buildInitialWeeklySchedule(plan: PlanPreferences) {
     }
   } else if (runFocused) {
     while ((counts.get("bike") ?? 0) > (counts.get("run") ?? 0) && (counts.get("bike") ?? 0) > 1) {
-      const bikeSession = [...sessions].reverse().find((session) => session.sport === "bike");
+      const bikeSession = [...sessions].reverse().find((session) => session.sport === "bike" && !session.quality && !/interval/i.test(session.title));
       if (!bikeSession) break;
       bikeSession.sport = "run";
       bikeSession.title = "Run session";
       bikeSession.duration = "";
+      bikeSession.durationOverrideMinutes = undefined;
       bikeSession.intensity = "Endurance";
       bikeSession.quality = false;
       counts.set("bike", (counts.get("bike") ?? 0) - 1);
@@ -117,11 +226,13 @@ export function buildInitialWeeklySchedule(plan: PlanPreferences) {
   }
 
   const runFocusedSessionTarget = runFocused ? Math.max(1, Math.ceil(requestedCount * 0.5)) : 0;
-  while (sessions.length < requestedCount) {
+  while (sessions.length < scheduleCount) {
     const missingSports = sports.filter((item) => (counts.get(item) ?? 0) === 0);
-    const candidates = missingSports.length ? missingSports : sports;
-    const eligibleCandidates = balancedFocus && (counts.get("run") ?? 0) >= (counts.get("bike") ?? 0)
-      ? candidates.filter((sport) => sport !== "run")
+    const candidates = balancedFocus
+      ? sports.filter((sport) => (counts.get(sport) ?? 0) < (targetCounts.get(sport) ?? 0))
+      : missingSports.length ? missingSports : sports;
+    const eligibleCandidates = balancedFocus
+      ? candidates
       : runFocused && (counts.get("run") ?? 0) < runFocusedSessionTarget && candidates.includes("run")
         ? candidates.filter((sport) => sport === "run")
         : runFocused && (counts.get("run") ?? 0) >= runFocusedSessionTarget && candidates.some((sport) => sport !== "run")
@@ -151,48 +262,6 @@ export function buildInitialWeeklySchedule(plan: PlanPreferences) {
     counts.set(sport, index + 1);
   }
 
-  // Spread a sport's weekly target across enough sessions to keep each workout
-  // within its sport-specific duration limit. In particular, don't turn a
-  // large weekly run target into one unusually long run when another sport has
-  // more sessions than its own target needs.
-  const minimumSessions = new Map<Sport, number>(sports.map((sport) => {
-    const cap = Math.min(plan.maxSessionMinutes || 90, recommendedSessionCap(plan, sport));
-    return [sport, Math.max(1, Math.ceil(weeklyTargetMinutes(plan, sport) / cap))];
-  }));
-  while (true) {
-    const needingSessions = sports.filter((sport) => (counts.get(sport) ?? 0) < (minimumSessions.get(sport) ?? 1));
-    const donorSports = sports.filter((sport) => (counts.get(sport) ?? 0) > Math.max(1, minimumSessions.get(sport) ?? 1));
-    const canTransfer = (sport: Sport, donor: Sport) => {
-      const runAfter = (counts.get("run") ?? 0) + (sport === "run" ? 1 : 0) - (donor === "run" ? 1 : 0);
-      const bikeAfter = (counts.get("bike") ?? 0) + (sport === "bike" ? 1 : 0) - (donor === "bike" ? 1 : 0);
-      if (balancedFocus) return runAfter <= bikeAfter;
-      if (runFocused) return runAfter >= bikeAfter;
-      return true;
-    };
-    const eligibleNeeds = needingSessions.filter((sport) => donorSports.some((donor) => canTransfer(sport, donor)));
-    if (eligibleNeeds.length === 0 || donorSports.length === 0) break;
-
-    const sport = eligibleNeeds.sort((a, b) => {
-      const need = (candidate: Sport) => weeklyTargetMinutes(plan, candidate) / ((counts.get(candidate) ?? 0) + 1);
-      return need(b) - need(a);
-    })[0];
-    const eligibleDonors = donorSports.filter((donor) => canTransfer(sport, donor));
-    const donor = eligibleDonors.sort((a, b) => {
-      const surplus = (candidate: Sport) => (counts.get(candidate) ?? 0) - (minimumSessions.get(candidate) ?? 1);
-      return surplus(b) - surplus(a);
-    })[0];
-    const movedSession = [...sessions].reverse().find((session) => session.sport === donor);
-    if (!sport || !donor || !movedSession) break;
-
-    movedSession.sport = sport;
-    movedSession.title = `${titleCase(sport)} session`;
-    movedSession.duration = "";
-    movedSession.intensity = "Endurance";
-    movedSession.quality = false;
-    counts.set(donor, (counts.get(donor) ?? 0) - 1);
-    counts.set(sport, (counts.get(sport) ?? 0) + 1);
-  }
-
   const allowedDays = draftDayOrder.filter((day) => !plan.restDays.includes(day));
   const availableDays = allowedDays.length ? allowedDays : draftDayOrder;
   const originalDays = new Map(sessions.map((session) => [session.id, session.day]));
@@ -202,41 +271,90 @@ export function buildInitialWeeklySchedule(plan: PlanPreferences) {
     const gap = Math.abs(draftDayOrder.indexOf(a) - draftDayOrder.indexOf(b));
     return Math.min(gap, draftDayOrder.length - gap);
   };
+  const longSessionIds = new Map<Sport, string>();
+  for (const sport of ["bike", "run"] as const) {
+    const sportSessions = sportIndices.get(sport) ?? [];
+    const longestSession = [...sportSessions].sort((a, b) => sessionMinutes(b) - sessionMinutes(a))[0];
+    if (longestSession) longSessionIds.set(sport, longestSession.id);
+  }
+  const intervalSports: Sport[] = plan.primaryFocus === "balanced"
+    ? ["bike", "run"]
+    : [plan.primaryFocus];
+  for (const sport of intervalSports) {
+    const sportSessions = sportIndices.get(sport) ?? [];
+    if (sportSessions.length < 2) continue;
+    for (const item of sportSessions) item.quality = false;
+    const candidates = sportSessions.filter((item) => item.id !== longSessionIds.get(sport));
+    const intervalSession = [...candidates].sort((a, b) => {
+      const aPriority = Number(a.title.toLowerCase().includes("interval")) * 2 + Number(plan.qualityDays.includes(originalDays.get(a.id) ?? ""));
+      const bPriority = Number(b.title.toLowerCase().includes("interval")) * 2 + Number(plan.qualityDays.includes(originalDays.get(b.id) ?? ""));
+      return bPriority - aPriority || sessionMinutes(b) - sessionMinutes(a);
+    })[0];
+    if (intervalSession) intervalSession.quality = true;
+  }
+  const longDayBySport: Partial<Record<Sport, string>> = {
+    bike: plan.longBikeDay === plan.longRunDay ? "Sat" : plan.longBikeDay,
+    run: plan.longRunDay === plan.longBikeDay ? "Sun" : plan.longRunDay,
+  };
+  const protectedWeekendDays = new Set(["Sat", "Sun"]);
   const sessionPriority = (session: PlannedSession) => {
     const originalDay = originalDays.get(session.id) ?? "";
-    const sportSessions = sportIndices.get(session.sport) ?? [];
-    const isLongSession = session.sport === "bike" && (originalDay === plan.longBikeDay || sportSessions.at(-1)?.id === session.id)
-      || session.sport === "run" && (originalDay === plan.longRunDay || sportSessions.at(-1)?.id === session.id);
-    const isQualitySession = session.quality || plan.qualityDays.includes(originalDay);
+    const isLongSession = longSessionIds.get(session.sport) === session.id;
+    const isQualitySession = session.quality || /interval/i.test(session.title) || plan.qualityDays.includes(originalDay);
     return isLongSession ? 0 : isQualitySession ? 1 : session.sport === "run" ? 2 : 3;
   };
   const orderedSessions = [...sessions].sort((a, b) => sessionPriority(a) - sessionPriority(b));
+  const assignedQualityDays: string[] = [];
 
   for (const session of orderedSessions) {
-    const candidates = availableDays.filter((day) => (dayAssignments.get(day)?.length ?? 0) < 2);
+    const isLongSession = longSessionIds.get(session.sport) === session.id;
+    const openDays = availableDays.filter((day) => (dayAssignments.get(day)?.length ?? 0) < 2);
+    const nonLongEndurance = (session.sport === "bike" || session.sport === "run") && !isLongSession;
+    const weekdayOptions = nonLongEndurance ? openDays.filter((day) => !protectedWeekendDays.has(day)) : openDays;
+    const candidates = weekdayOptions.length ? weekdayOptions : openDays;
     const daysWithoutSameSport = candidates.filter((day) => !dayAssignments.get(day)?.some((item) => item.sport === session.sport));
-    const placementDays = daysWithoutSameSport.length ? daysWithoutSameSport : candidates;
+    const daysWithRecovery = daysWithoutSameSport.filter((day) =>
+      availableDays
+        .filter((assignedDay) => dayAssignments.get(assignedDay)?.some((item) => item.sport === session.sport))
+        .every((assignedDay) => dayDistance(day, assignedDay) > 1),
+    );
+    const placementDays = daysWithRecovery.length
+      ? daysWithRecovery
+      : daysWithoutSameSport.length
+        ? daysWithoutSameSport
+        : candidates;
     const originalDay = originalDays.get(session.id) ?? "";
-    const sportSessions = sportIndices.get(session.sport) ?? [];
-    const isLongSession = session.sport === "bike" && (originalDay === plan.longBikeDay || sportSessions.at(-1)?.id === session.id)
-      || session.sport === "run" && (originalDay === plan.longRunDay || sportSessions.at(-1)?.id === session.id);
-    const preferredDay = session.sport === "bike" ? plan.longBikeDay : session.sport === "run" ? plan.longRunDay : "";
-    const prefersQualityDay = session.quality || plan.qualityDays.includes(originalDay);
+    const preferredDay = session.sport === "bike" || session.sport === "run" ? longDayBySport[session.sport] ?? "" : "";
+    const prefersQualityDay = session.quality || /interval/i.test(session.title) || plan.qualityDays.includes(originalDay);
     const assignedSportDays = availableDays.filter((day) => dayAssignments.get(day)?.some((item) => item.sport === session.sport));
-    const day = [...placementDays].sort((a, b) => {
+    const separatedPlacementDays = prefersQualityDay
+      ? placementDays.filter((day) => assignedQualityDays.every((qualityDay) => dayDistance(day, qualityDay) > 1))
+      : [];
+    const separatedOpenDays = prefersQualityDay
+      ? candidates.filter((day) => assignedQualityDays.every((qualityDay) => dayDistance(day, qualityDay) > 1))
+      : [];
+    const qualitySafeDays = separatedPlacementDays.length ? separatedPlacementDays : separatedOpenDays;
+    const finalPlacementDays = qualitySafeDays.length ? qualitySafeDays : placementDays;
+    const day = [...finalPlacementDays].sort((a, b) => {
       const score = (candidate: string) => {
         const dayWorkouts = dayAssignments.get(candidate) ?? [];
         const closestSameSport = assignedSportDays.length ? Math.min(...assignedSportDays.map((sportDay) => dayDistance(candidate, sportDay))) : 7;
         const qualityPenalty = prefersQualityDay && !plan.qualityDays.includes(candidate) ? 4 : 0;
         const longDayPenalty = isLongSession ? dayDistance(candidate, preferredDay) * 5 : 0;
         const keepDayBonus = candidate === originalDay ? -2 : 0;
-        const spacingPenalty = closestSameSport === 1 ? 12 : closestSameSport === 2 ? 4 : 0;
-        return dayWorkouts.length * 100 + qualityPenalty + longDayPenalty + spacingPenalty + keepDayBonus;
+        const adjacentSameSportDays = assignedSportDays.filter((sportDay) => dayDistance(candidate, sportDay) === 1).length;
+        const spacingPenalty = adjacentSameSportDays * 24 + (closestSameSport === 2 ? 4 : 0);
+        const closestQualityDay = assignedQualityDays.length ? Math.min(...assignedQualityDays.map((qualityDay) => dayDistance(candidate, qualityDay))) : 7;
+        const qualitySpacingPenalty = prefersQualityDay && closestQualityDay <= 1 ? 48 : 0;
+        return dayWorkouts.length * 100 + qualityPenalty + longDayPenalty + spacingPenalty + qualitySpacingPenalty + keepDayBonus;
       };
       return score(a) - score(b) || draftDayOrder.indexOf(a) - draftDayOrder.indexOf(b);
     })[0];
     session.day = day ?? "";
-    if (day) dayAssignments.get(day)?.push(session);
+    if (day) {
+      dayAssignments.get(day)?.push(session);
+      if (prefersQualityDay) assignedQualityDays.push(day);
+    }
   }
   return sessions;
 }
@@ -261,11 +379,11 @@ function minutesLabel(minutes: number) {
 }
 
 export function generateWeeklyWorkouts(plan: PlanPreferences, recentSessions: RecentSession[] = []) {
-  const sessions = plan.manualSessions;
+  const sessions = plan.manualSessions.map((session) => ({ ...session }));
   const runFocused = plan.primaryFocus === "run";
   const warnings: string[] = [];
   const historyAdjustments: Array<{ sport: Sport; targetMinutes: number; rampTargetMinutes: number; startingMinutes: number; medianMinutes: number; completedWeeks: number }> = [];
-  const maxMinutes = plan.maxSessionMinutes || 90;
+  const maxMinutes = Math.max(15, plan.maxSessionMinutes || 90);
   const targetMinutesBySport = new Map<Sport, number>();
   const today = new Date();
   const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -322,12 +440,9 @@ export function generateWeeklyWorkouts(plan: PlanPreferences, recentSessions: Re
     }
   }
 
-  const selectedQualitySports = plan.primaryFocus === "balanced" && plan.qualitySports.length === 0 ? ["bike", "run"] as const : plan.qualitySports;
-  const qualitySports = plan.primaryFocus === "balanced"
-    ? [...selectedQualitySports].sort((a, b) => (a === "bike" ? -1 : b === "bike" ? 1 : 0))
-    : [plan.primaryFocus];
+  const qualitySports = plan.primaryFocus === "balanced" ? ["bike", "run"] as const : [plan.primaryFocus];
   const qualitySessionIds = new Set<string>();
-  const qualitySessionDays: string[] = [];
+  const qualitySessions: PlannedSession[] = [];
   const weekdayOrder = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const daysApart = (a: string, b: string) => {
     const difference = Math.abs(weekdayOrder.indexOf(a) - weekdayOrder.indexOf(b));
@@ -338,22 +453,111 @@ export function generateWeeklyWorkouts(plan: PlanPreferences, recentSessions: Re
     if (sportSessions.length < 2) continue;
     const preferredLongDay = sport === "bike" ? plan.longBikeDay : sport === "run" ? plan.longRunDay : null;
     const longSession = preferredLongDay
-      ? sportSessions.find((session) => session.day === preferredLongDay) ?? sportSessions.at(-1)
+      ? sportSessions.find((session) => session.day === preferredLongDay) ?? [...sportSessions].sort((a, b) => sessionMinutes(b) - sessionMinutes(a))[0]
       : null;
-    const qualityCandidates = sportSessions.filter((session) => session.id !== longSession?.id);
-    const separatedCandidates = qualityCandidates.filter((session) => qualitySessionDays.every((day) => daysApart(day, session.day) > 1));
-    const candidates = separatedCandidates.length ? separatedCandidates : qualityCandidates;
-    const qualitySession = candidates.find((session) => plan.qualityDays.includes(session.day)) ?? candidates[0];
+    const candidates = sportSessions.filter((session) => session.id !== longSession?.id);
+    const qualitySession = candidates.find((session) => session.quality || /interval/i.test(session.title))
+      ?? candidates.find((session) => plan.qualityDays.includes(session.day))
+      ?? [...candidates].sort((a, b) => sessionMinutes(b) - sessionMinutes(a))[0];
     if (qualitySession) {
       qualitySessionIds.add(qualitySession.id);
-      qualitySessionDays.push(qualitySession.day);
+      qualitySessions.push(qualitySession);
     }
+  }
+  // Place both key sessions on separated weekdays. This repositions generated workouts
+  // instead of silently downgrading one of the sports to endurance.
+  const qualityDayLoads = new Map(weekdayOrder.map((day) => [day, sessions.filter((session) => session.day === day && !qualitySessionIds.has(session.id)).length]));
+  const availableQualityDays = weekdayOrder
+    .filter((day) => !["Sat", "Sun"].includes(day) && !plan.restDays.includes(day));
+  // Find spaced locations for both key workouts together. If a preferred day is
+  // full, move a non-key session to an open weekday before rejecting the pairing.
+  // The previous greedy fallback knowingly accepted adjacent quality days.
+  const qualityCandidates = qualitySessions.map((session) => ({ session, days: availableQualityDays }));
+  let bestAssignment: Array<{ session: PlannedSession; day: string }> | null = null;
+  let bestMoves: Array<{ session: PlannedSession; day: string }> = [];
+  let bestScore = Number.POSITIVE_INFINITY;
+  const searchAssignments = (index: number, placed: Array<{ session: PlannedSession; day: string }>, score: number) => {
+    if (index === qualityCandidates.length) {
+      const assignedDays = new Set(placed.map((assignment) => assignment.day));
+      const loads = new Map(qualityDayLoads);
+      const moves: Array<{ session: PlannedSession; day: string }> = [];
+      const movedIds = new Set<string>();
+      for (const assignment of placed) {
+        const target = assignment.day;
+        const blockers = sessions.filter((item) => item.day === target && !qualitySessionIds.has(item.id) && !movedIds.has(item.id));
+        const mustMove = blockers.filter((item) => item.sport === assignment.session.sport);
+        const blockersToMove = [...mustMove];
+        while ((loads.get(target) ?? 0) - blockersToMove.length > 1) {
+          const next = blockers.find((item) => !blockersToMove.some((selected) => selected.id === item.id));
+          if (!next) break;
+          blockersToMove.push(next);
+        }
+        if ((loads.get(target) ?? 0) - blockersToMove.length > 1) return;
+        for (const blocker of blockersToMove) {
+          const destinations = availableQualityDays.filter((day) => {
+            if (assignedDays.has(day) || (loads.get(day) ?? 0) >= 2) return false;
+            const alreadyThere = sessions.some((item) => item.day === day && item.id !== blocker.id && !movedIds.has(item.id)
+              && !qualitySessionIds.has(item.id) && item.sport === blocker.sport);
+            const movedThere = moves.some((move) => move.day === day && move.session.sport === blocker.sport);
+            return !alreadyThere && !movedThere;
+          }).sort((a, b) => {
+            const scoreDay = (day: string) => (loads.get(day) ?? 0) * 20 + (day === blocker.day ? -3 : 0);
+            return scoreDay(a) - scoreDay(b) || weekdayOrder.indexOf(a) - weekdayOrder.indexOf(b);
+          });
+          const destination = destinations[0];
+          if (!destination) return;
+          movedIds.add(blocker.id);
+          moves.push({ session: blocker, day: destination });
+          loads.set(target, (loads.get(target) ?? 0) - 1);
+          loads.set(destination, (loads.get(destination) ?? 0) + 1);
+        }
+        if ((loads.get(target) ?? 0) >= 2) return;
+        loads.set(target, (loads.get(target) ?? 0) + 1);
+      }
+      const totalScore = score + moves.length * 30;
+      if (totalScore < bestScore) {
+        bestScore = totalScore;
+        bestAssignment = [...placed];
+        bestMoves = [...moves];
+      }
+      return;
+    }
+    const { session, days } = qualityCandidates[index];
+    const targetDay = plan.qualityDays.find((day) => days.includes(day));
+    for (const day of days) {
+      if (placed.some((assignment) => daysApart(day, assignment.day) <= 1)) continue;
+      const placementScore = (qualityDayLoads.get(day) ?? 0) * 20
+        + (day === session.day ? -3 : 0)
+        + (day === targetDay ? -6 : 0);
+      if (score + placementScore >= bestScore) continue;
+      searchAssignments(index + 1, [...placed, { session, day }], score + placementScore);
+    }
+  };
+  if (qualitySessions.length > 0) searchAssignments(0, [], 0);
+  const completedAssignments = bestAssignment as Array<{ session: PlannedSession; day: string }> | null;
+  if (completedAssignments) {
+    for (const { session, day } of bestMoves) session.day = day;
+    for (const { session, day } of completedAssignments) session.day = day;
+  }
+  const longSessionIds = new Set<string>();
+  for (const sport of ["bike", "run"] as const) {
+    const sportSessions = sessions.filter((session) => session.sport === sport);
+    if (!sportSessions.length) continue;
+    const preferredLongDay = sport === "bike" ? plan.longBikeDay : plan.longRunDay;
+    const preferredSession = sportSessions.find((session) => session.day === preferredLongDay);
+    const longestSession = [...sportSessions].sort((a, b) => {
+      const aMinutes = a.durationMinutes ?? durationToMinutes(a.duration) ?? 0;
+      const bMinutes = b.durationMinutes ?? durationToMinutes(b.duration) ?? 0;
+      return bMinutes - aMinutes;
+    })[0];
+    longSessionIds.add((preferredSession ?? longestSession).id);
   }
   const generatedSessions = sessions.map((session) => {
     const sportSessions = sessions.filter((item) => item.sport === session.sport);
     const sportIndex = sportSessions.findIndex((item) => item.id === session.id);
     const targetMinutes = targetMinutesBySport.get(session.sport) ?? weeklyTargetMinutes(plan, session.sport, "weekly", recentSessions);
     const weeklyMinutes = Math.min(targetMinutes, trainingBaseline[session.sport]?.startingMinutes ?? targetMinutes);
+    const qualityCandidate = qualitySessionIds.has(session.id);
     let share = 1 / sportSessions.length;
 
     if ((session.sport === "bike" || session.sport === "run") && sportSessions.length > 1) {
@@ -365,24 +569,43 @@ export function generateWeeklyWorkouts(plan: PlanPreferences, recentSessions: Re
       const minimumLongShare = Math.max(0, 1 - ((sportSessions.length - 1) * perSessionLimit) / weeklyMinutes);
       const maximumLongShare = Math.min(1, perSessionLimit / weeklyMinutes);
       const longShare = Math.max(minimumLongShare, Math.min(desiredLongShare, maximumLongShare));
-      share = sportIndex === longIndex ? longShare : (1 - longShare) / (sportSessions.length - 1);
+      const remainingShare = 1 - longShare;
+      if ((session.sport === "bike" || session.sport === "run") && sportSessions.length === 3) {
+        // Keep the three-workout structure: key intervals, one aerobic session,
+        // and the long workout. The aerobic session absorbs the remaining load.
+        const qualityShare = session.sport === "bike"
+          ? remainingShare / 3
+          : Math.min(remainingShare, Math.min(maxMinutes, recommendedSessionCap(plan, session.sport, true)) / weeklyMinutes);
+        share = sportIndex === longIndex
+          ? longShare
+          : qualityCandidate ? qualityShare : remainingShare - qualityShare;
+      } else {
+        share = sportIndex === longIndex ? longShare : remainingShare / (sportSessions.length - 1);
+      }
     }
 
     const rawMinutes = weeklyMinutes * share;
-    const qualityCandidate = qualitySessionIds.has(session.id) && rawMinutes >= 40;
     const sessionCap = Math.min(maxMinutes, recommendedSessionCap(plan, session.sport, qualityCandidate));
-    const durationMinutes = Math.min(sessionCap, roundToFive(rawMinutes));
-    const quality = qualityCandidate && durationMinutes >= 40;
+    const durationOverride = session.durationOverrideMinutes;
+    const manualDurationCap = qualityCandidate ? sessionCap : maxMinutes;
+    const durationMinutes = Math.max(15, typeof durationOverride === "number" && Number.isFinite(durationOverride) && durationOverride > 0
+      ? Math.min(manualDurationCap, roundToFive(durationOverride))
+      : Math.min(sessionCap, roundToFive(rawMinutes)));
+    const quality = qualityCandidate;
     const plannedDistanceTarget = plan.volumeBasis === "distance"
       ? (plan.distanceTargets[session.sport].weekly ?? 0) * (weeklyMinutes / Math.max(1, targetMinutes)) * share
       : 0;
     const distanceTarget = plan.volumeBasis === "distance" ? plannedDistanceTarget : 0;
     const distanceUnit = plan.volumeBasis === "distance" ? plan.distanceTargets[session.sport].unit : "";
     const swimVariant = session.sport === "swim" && sportIndex > 0 ? "endurance" : "technique";
+    const isLongSession = longSessionIds.has(session.id);
     const title = quality
-      ? session.sport === "swim" ? "Steady swim intervals" : `Controlled ${session.sport} intervals`
-      : session.sport === "swim" ? swimVariant === "endurance" ? "Easy aerobic swim" : "Swim technique + endurance" : session.sport === "bike" ? "Easy endurance ride" : "Easy aerobic run";
-    const intensity = quality ? "Controlled · RPE 5–6/10" : "Easy · RPE 3–4/10";
+      ? `${titleCase(session.sport)} intervals`
+      : isLongSession && session.sport === "bike" ? "Long ride"
+        : isLongSession && session.sport === "run" ? "Long run"
+          : session.sport === "swim" ? swimVariant === "endurance" ? "Swim endurance" : "Swim technique + endurance"
+            : session.sport === "bike" ? "Bike endurance" : "Run endurance";
+    const intensity = workoutFocusLabel(session.sport, quality, swimVariant);
 
     return {
       ...session,

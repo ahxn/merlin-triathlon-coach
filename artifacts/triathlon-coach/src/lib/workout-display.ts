@@ -50,24 +50,20 @@ export function formatWorkoutDistance(meters: number, sport: Sport, units: UnitS
 }
 
 export function workoutTargetLabel(plan: PlanPreferences, workout: Workout, activities: Activity[], units: UnitSystem) {
-  const display = plan.workoutDisplay ?? "time";
   const time = `${plan.volumeBasis === "distance" ? "~" : ""}${workout.duration.replace(/^~/, "")}`;
-  if (display === "time") return time;
   const estimate = estimateWorkoutDistance(plan, workout, activities);
-  if (!estimate) return display === "both" ? time : "Distance unavailable";
+  if (!estimate) return time;
   const distance = `${estimate.source === "planned target" ? "" : "~"}${formatWorkoutDistance(estimate.meters, workout.sport, units)}`;
-  if (display === "distance") return distance;
   return `${time} · ${distance}`;
 }
 
 export function workoutDescriptionForDisplay(plan: PlanPreferences, workout: Workout, activities: Activity[], units: UnitSystem) {
-  const display = plan.workoutDisplay ?? "time";
-  const estimate = display === "time" ? null : estimateWorkoutDistance(plan, workout, activities);
+  const estimate = estimateWorkoutDistance(plan, workout, activities);
   const time = `${plan.volumeBasis === "distance" ? "Estimated time" : "Planned duration"}: ${plan.volumeBasis === "distance" ? "~" : ""}${workout.duration.replace(/^~/, "")}.`;
   const distance = estimate
     ? `${estimate.source === "planned target" ? "Target distance" : "Estimated distance"}: ${estimate.source === "planned target" ? "" : "~"}${formatWorkoutDistance(estimate.meters, workout.sport, units)}${estimate.source === "recent pace" ? " (based on recent activities)" : estimate.source === "typical pace" ? " (typical pace estimate)" : ""}.`
     : "Distance estimate unavailable.";
-  const summary = display === "time" ? time : display === "distance" ? distance : `${time} ${distance}`;
+  const summary = `${time} ${distance}`;
   const body = workout.workoutDescription?.replace(/^(?:Planned duration|Estimated time|Approximate session target):[^\n]*(?:\n|$)/, "").trim();
   return body ? `${summary}\n${body}` : summary;
 }

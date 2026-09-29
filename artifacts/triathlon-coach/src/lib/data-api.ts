@@ -2,7 +2,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5001/api";
 
 export const ATHLETE_ID = "b3bc616f-3d6b-4764-9dd9-5a502faebc52";
 
-export type RecoveryRhythm = "2:1" | "3:1" | "4:1" | "manual";
+export type RecoveryRhythm = "none" | "2:1" | "3:1" | "4:1" | "custom" | "manual";
 
 export type WorkoutConfirmation = {
   workoutId: string;
@@ -24,12 +24,14 @@ export type PlanPreferences = {
   workoutOverrides?: PlanWorkoutOverride[];
   workoutConfirmations?: WorkoutConfirmation[];
   recoveryRhythm: RecoveryRhythm;
+  customBuildWeeks?: number;
   goalMode: "race" | "consistency";
+  triathlonExperience?: "beginner" | "intermediate" | "advanced";
   volumeBasis: "time" | "distance";
   workoutDisplay: "time" | "distance" | "both";
   primaryFocus: "balanced" | "swim" | "bike" | "run";
   planningMode: "guided" | "self-managed";
-  manualSessions: Array<{ id: string; day: string; sport: "swim" | "bike" | "run"; title: string; duration: string; intensity: string; quality: boolean; durationMinutes?: number; workoutDescription?: string }>;
+  manualSessions: Array<{ id: string; day: string; sport: "swim" | "bike" | "run"; title: string; duration: string; intensity: string; quality: boolean; durationMinutes?: number; durationOverrideMinutes?: number; workoutDescription?: string }>;
   sessionsPerWeek: number;
   restDaysPerWeek: number;
   maxSessionMinutes: number;
@@ -44,7 +46,14 @@ export type PlanPreferences = {
     run: { weekly: number | null; peak: number | null; unit: "mi" | "km" };
   };
   weeklyBuildRate: number | null;
+  recoveryWeekPercent?: number;
   trainingBaseline?: Partial<Record<"swim" | "bike" | "run", { startingMinutes: number; medianMinutes: number; completedWeeks: number }>>;
+  maxHeartRate?: number | null;
+  heartRateZoneUpperBounds?: { run?: number[]; bike?: number[] };
+  heartRateZoneNames?: { run?: string[]; bike?: string[] };
+  runIntervalRecoverySeconds?: { short: number; medium: number; long: number };
+  easyRunPaceSecondsPerKm?: number | null;
+  ftpWatts?: number | null;
   longRunDay: string;
   longBikeDay: string;
   qualityDays: string[];
@@ -199,6 +208,8 @@ export type IntervalsActivityDetails = IntervalsActivity & {
 };
 
 export type IntervalsStatus = { configured: boolean; athleteId: string };
+export type IntervalsSportHeartRateSettings = { maxHeartRate: number | null; zones: number[] | null; zoneNames: string[] | null };
+export type IntervalsAthleteSettings = { maxHeartRate: number | null; run?: IntervalsSportHeartRateSettings; bike?: IntervalsSportHeartRateSettings };
 export type IntervalsCalendar = {
   events: IntervalsEvent[];
   activities: IntervalsActivity[];
@@ -265,6 +276,7 @@ export const dataApi = {
   createRecommendation: (body: Omit<RecommendationRecord, "id" | "createdAt" | "decidedAt">) => request<RecommendationRecord>(`/athletes/${ATHLETE_ID}/recommendations`, { method: "POST", body: JSON.stringify(body) }),
   updateRecommendation: (id: string, body: Partial<RecommendationRecord>) => request<RecommendationRecord>(`/athletes/${ATHLETE_ID}/recommendations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   intervalsStatus: () => request<IntervalsStatus>("/integrations/intervals/status"),
+  intervalsAthleteSettings: () => request<IntervalsAthleteSettings>("/integrations/intervals/athlete-settings"),
   intervalsCalendar: (from: string, to: string) => request<IntervalsCalendar>(`/integrations/intervals/calendar?from=${from}&to=${to}`),
   intervalsWellness: (oldest: string, newest: string) => request<IntervalsWellnessResponse>(`/integrations/intervals/wellness?oldest=${oldest}&newest=${newest}`),
   intervalsActivityDetails: (id: number | string) => request<IntervalsActivityDetails>(`/integrations/intervals/activity/${encodeURIComponent(String(id))}`),

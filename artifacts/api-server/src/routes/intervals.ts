@@ -14,6 +14,45 @@ router.get("/integrations/intervals/status", (_req, res) => {
   });
 });
 
+router.get("/integrations/intervals/athlete-settings", asyncRoute(async (_req, res) => {
+  const apiKey = process.env.INTERVALS_API_KEY;
+  if (!apiKey) return void res.status(503).json({ error: "Intervals.icu is not configured on the server." });
+  const athleteId = encodeURIComponent(process.env.INTERVALS_ATHLETE_ID || "0");
+  const response = await fetch(`https://intervals.icu/api/v1/athlete/${athleteId}`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Basic ${Buffer.from(`API_KEY:${apiKey}`).toString("base64")}`,
+      "User-Agent": "IntervalsIntegratedCoach/1.0",
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) return void res.status(502).json({ error: "Intervals.icu did not accept the configured API key or athlete access." });
+    if (response.status === 429) return void res.status(502).json({ error: "Intervals.icu rate limit reached. Try again later." });
+    return void res.status(502).json({ error: "Intervals.icu could not provide athlete settings right now." });
+  }
+  const athlete = await response.json() as {
+    max_hr?: unknown;
+    sportSettings?: Array<{ types?: unknown; max_hr?: unknown; hr_zones?: unknown; hr_zone_names?: unknown }>;
+  };
+  const sportSettings = Array.isArray(athlete.sportSettings) ? athlete.sportSettings : [];
+  const settingsFor = (sport: "Run" | "Ride") => sportSettings.find((settings) => Array.isArray(settings.types) && settings.types.includes(sport));
+  const readSportSettings = (settings: typeof sportSettings[number] | undefined) => {
+    const maxHeartRate = typeof settings?.max_hr === "number" && Number.isFinite(settings.max_hr) ? settings.max_hr : null;
+    const zones = Array.isArray(settings?.hr_zones) && settings.hr_zones.every((value) => typeof value === "number" && Number.isFinite(value))
+      ? settings.hr_zones as number[]
+      : null;
+    const zoneNames = Array.isArray(settings?.hr_zone_names) && settings.hr_zone_names.every((value) => typeof value === "string")
+      ? settings.hr_zone_names as string[]
+      : null;
+    return { maxHeartRate, zones, zoneNames };
+  };
+  const run = readSportSettings(settingsFor("Run"));
+  const bike = readSportSettings(settingsFor("Ride"));
+  const athleteMaxHeartRate = typeof athlete.max_hr === "number" && Number.isFinite(athlete.max_hr) ? athlete.max_hr : null;
+  res.json({ maxHeartRate: athleteMaxHeartRate ?? run.maxHeartRate ?? bike.maxHeartRate, run, bike });
+}));
+
 router.get("/integrations/intervals/calendar", asyncRoute(async (req, res) => {
   const apiKey = process.env.INTERVALS_API_KEY;
   if (!apiKey) return void res.status(503).json({ error: "Intervals.icu is not configured on the server." });
