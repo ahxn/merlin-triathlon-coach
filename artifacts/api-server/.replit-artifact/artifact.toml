@@ -27,6 +27,8 @@ args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
 [services.production.run.env]
 PORT = "8080"
 NODE_ENV = "production"
+SUPABASE_URL = "https://ctiyyxjrkurepogcfhoj.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_jEMgFuapBspDu8ZwxVR9uw_O3j3N3Ng"
 
 [services.production.health.startup]
 path = "/api/healthz"

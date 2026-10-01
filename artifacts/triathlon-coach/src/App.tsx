@@ -7,10 +7,12 @@ import {
   createContext,
   useContext,
   type ReactNode,
+  type FormEvent,
 } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Link,
+  Redirect,
   Route,
   Switch,
   useLocation,
@@ -38,6 +40,7 @@ import {
   LayoutList,
   Lightbulb,
   Link2,
+  LogOut,
   Menu,
   Mountain,
   Pencil,
@@ -71,6 +74,7 @@ import { comparablePerformanceInsights } from "@/lib/performance-comparisons";
 import { estimateWorkoutDistance, workoutDescriptionForDisplay, workoutTargetLabel } from "@/lib/workout-display";
 import { formatRunPace, getRunTrainingPaces, paceSecondsPerKmFromInput, type RunPaceUnit } from "@/lib/run-training-paces";
 import { getBikeTrainingPowerZones } from "@/lib/bike-training-powers";
+import { authConfigured, getSession, getEmailConfirmationStatus, isPasswordRecovery, restoreSession, signIn, signOut, signUp, sendPasswordReset, updatePassword } from "@/lib/auth";
 
 type Sport = "swim" | "bike" | "run" | "strength" | "rest" | "other";
 type SessionStatus = "planned" | "completed" | "missed" | "skipped";
@@ -149,9 +153,11 @@ type Recommendation = {
 };
 type Connection = {
   configured: boolean;
+  intervalsConfigured: boolean;
   athleteId: string;
   lastSync?: string;
   error?: string;
+  intervalsError?: string;
 };
 const defaultPlanPreferences: PlanPreferences = {
   recoveryRhythm: "3:1",
@@ -457,7 +463,7 @@ function sessionsFromIntervals(events: IntervalsEvent[], activities: IntervalsAc
         duration: formatDuration(activity.moving_time),
         durationMinutes: activity.moving_time ? Math.round(activity.moving_time / 60) : undefined,
         distanceMeters: activity.distance,
-        intensity: typeof activity.icu_training_load === "number" ? `Training load ${Math.round(activity.icu_training_load)}` : "Completed in Intervals.icu",
+        intensity: typeof activity.icu_training_load === "number" ? `Training load ${Math.round(activity.icu_training_load)}` : "Completed activity",
         status: "completed",
         notes: activity.description || event.description || undefined,
         source: activity.device_name?.toLowerCase().includes("garmin") ? activity.device_name : undefined,
@@ -508,7 +514,7 @@ function sessionsFromIntervals(events: IntervalsEvent[], activities: IntervalsAc
         duration: formatDuration(activity.moving_time),
         durationMinutes: activity.moving_time ? Math.round(activity.moving_time / 60) : undefined,
         distanceMeters: activity.distance,
-        intensity: typeof activity.icu_training_load === "number" ? `Training load ${Math.round(activity.icu_training_load)}` : "Completed in Intervals.icu",
+        intensity: typeof activity.icu_training_load === "number" ? `Training load ${Math.round(activity.icu_training_load)}` : "Completed activity",
         status: "completed",
         notes: activity.description || undefined,
         source: activity.device_name?.toLowerCase().includes("garmin") ? activity.device_name : undefined,
@@ -781,6 +787,7 @@ const seedAthlete: Athlete = {
 };
 const seedConnection: Connection = {
   configured: false,
+  intervalsConfigured: false,
   athleteId: "0",
 };
 
@@ -1041,7 +1048,7 @@ function SessionRow({
 }
 
 function AppShell({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { athlete, recommendations, connection } = useApp();
   const initials = athlete.name.split(/\s+/).filter(Boolean).map((name) => name[0]).join("").slice(0, 2) || "A";
@@ -1104,11 +1111,11 @@ function AppShell({ children }: { children: ReactNode }) {
               ? <CheckCircle2 size={17} strokeWidth={1.8} className="mt-0.5 shrink-0 text-emerald-300" />
               : <Info size={17} strokeWidth={1.8} className="mt-0.5 shrink-0 text-amber-300" />}
             <div className="min-w-0">
-              <p className="text-sm text-sidebar-foreground/80">Intervals.icu {connection.configured ? connection.error ? "needs attention" : "synced" : "not connected"}</p>
+              <p className="text-sm text-sidebar-foreground/80">{connection.intervalsConfigured ? "Intervals.icu" : "No data connection"}</p>
               <p className="mt-0.5 text-[10px] leading-tight text-sidebar-foreground/55">
                 {connection.lastSync
                   ? `Last sync · ${new Date(connection.lastSync).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                  : connection.error ? "Sync unavailable" : "Waiting for first sync"}
+                  : connection.error || connection.intervalsError ? "Sync needs attention" : "Waiting for first sync"}
               </p>
             </div>
           </div>
@@ -1124,6 +1131,7 @@ function AppShell({ children }: { children: ReactNode }) {
               {label}
             </Link>
           ))}
+          <button type="button" onClick={() => { void signOut().then(() => setLocation("/login")); }} className="nav-link mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left font-sans text-sm font-normal leading-5 text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"><LogOut size={17} strokeWidth={1.8} />Sign out</button>
           <Link
             href="/profile"
             onClick={() => setMobileOpen(false)}
@@ -1826,7 +1834,7 @@ function HealthMetricsDashboard() {
                 <div className="mt-1.5 grid grid-cols-2 gap-2 lg:grid-cols-4">{availableStats.map(renderStat)}</div>
               </section>;
             })}</div>
-          : !connection.configured && <p className="mt-3 rounded-xl border border-dashed border-border bg-background px-4 py-5 text-xs text-muted-foreground">Connect Intervals.icu to see more training stats.</p>}
+          : !connection.configured && <p className="mt-3 rounded-xl border border-dashed border-border bg-background px-4 py-5 text-xs text-muted-foreground">Connect your required Intervals.icu account to see training stats.</p>}
       </section>
     </div>
   );
@@ -2135,7 +2143,7 @@ function CalendarSection() {
             <span className="flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-600" /> Completed</span>
             <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-amber-400" /> Pending</span>
             <span className="flex items-center gap-2"><Info size={14} /> Select a session to view workout details</span>
-            {!connection.configured && <span className="text-amber-700">Add your Intervals.icu API key in the local .env file to load workouts.</span>}
+            {!connection.configured && <span className="text-amber-700">Connect your required Intervals.icu account in Settings to load workouts.</span>}
           </div>
           <span className="flex shrink-0 items-center gap-2">Upcoming weeks<ChevronDown size={14} className="text-primary" /></span>
         </div>
@@ -2530,7 +2538,6 @@ function RecommendationsPage() {
                 </div>
                 <div className="flex shrink-0 gap-2">
                     <Button
-                      size="sm"
                       onClick={() => void decide(r.id, "approved")}
                       disabled={saving}
                       testId={`button-approve-${r.id}`}
@@ -3352,7 +3359,7 @@ function PlanGoalEditor({ forceSetup = false, onSaved, onCancel }: { forceSetup?
                     <label htmlFor="plan-max-heart-rate" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Maximum heart rate · bpm</label>
                     <input id="plan-max-heart-rate" type="number" min="80" max="240" step="1" value={maxHeartRateInput} onChange={(event) => { const value = event.target.value; setMaxHeartRateInput(value); const max = value.trim() && Number.isInteger(Number(value)) && Number(value) >= 80 && Number(value) <= 240 ? Number(value) : null; if (max) { const defaults = heartRateZoneUpperBoundsFromMax(max); const nextBounds = { run: defaults, bike: defaults }; setZoneUpperBoundInputs({ run: defaults.map(String), bike: defaults.map(String) }); updatePlan({ maxHeartRate: max, heartRateZoneUpperBounds: nextBounds, heartRateZoneNames: undefined }); } else updatePlan({ maxHeartRate: null }); }} placeholder="e.g. 185" aria-describedby="plan-max-hr-help" data-testid="input-plan-max-heart-rate" className="mt-2 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm" />
                     <p id="plan-max-hr-help" className="mt-1 text-[11px] text-muted-foreground">Used for personalized aerobic heart-rate guidance.</p>
-                    {connection.configured && <Button type="button" variant="secondary" onClick={() => void importMaxHeartRate()} disabled={importingMaxHeartRate} className="mt-2">{importingMaxHeartRate ? "Importing…" : "Import from Intervals.icu"}</Button>}
+                    {connection.intervalsConfigured && <Button type="button" variant="secondary" onClick={() => void importMaxHeartRate()} disabled={importingMaxHeartRate} className="mt-2">{importingMaxHeartRate ? "Importing…" : "Import from Intervals.icu"}</Button>}
                     {maxHeartRateInput.trim() && !displayedHeartRateZones.length && <p role="alert" className="mt-2 text-xs font-medium text-destructive">Enter a max heart rate from 80 to 240 bpm.</p>}
                   </div>
                   <div>
@@ -3752,7 +3759,7 @@ function ProfilePage() {
             <h2 className="text-base font-bold">Heart rate training</h2>
             <p className="mt-1 text-sm text-muted-foreground">Add your max HR to show an approximate aerobic heart-rate guide in easy run prescriptions.</p>
             <label className="mt-4 block max-w-xs text-xs font-semibold text-muted-foreground">Maximum heart rate (bpm)<input type="number" min="80" max="240" step="1" value={maxHeartRateInput} onChange={(event) => setMaxHeartRateInput(event.target.value)} placeholder="e.g. 185" className="mt-1.5 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal text-foreground" /></label>
-            {connection.configured && <Button variant="secondary" onClick={() => void importMaxHeartRate()} disabled={importingMaxHeartRate || savingTrainingSettings} className="mt-3"><HeartPulse size={15} /> {importingMaxHeartRate ? "Importing…" : "Import from Intervals.icu"}</Button>}
+            {connection.intervalsConfigured && <Button variant="secondary" onClick={() => void importMaxHeartRate()} disabled={importingMaxHeartRate || savingTrainingSettings} className="mt-3"><HeartPulse size={15} /> {importingMaxHeartRate ? "Importing…" : "Import from Intervals.icu"}</Button>}
           </div>
           <div className="mt-6 flex justify-end border-t border-border pt-5"><Button onClick={() => void saveTrainingSettings()} disabled={savingTrainingSettings || importingMaxHeartRate}><Save size={15} /> {savingTrainingSettings ? "Saving…" : "Save training settings"}</Button></div>
         </div>
@@ -3764,7 +3771,7 @@ function ProfilePage() {
 type ColorTheme = "lagoon" | "ocean" | "ember" | "dracula";
 const COLOR_THEME_KEY = "triathlon-coach-color-theme";
 const colorThemeOptions: Array<{ id: ColorTheme; name: string; description: string; colors: [string, string, string] }> = [
-  { id: "lagoon", name: "Lagoon", description: "The original sea-glass and coral palette.", colors: ["#244a4d", "#ed967e", "#eff7f5"] },
+  { id: "lagoon", name: "Lagoon", description: "Sea-glass green with cool aqua accents.", colors: ["#244a4d", "#53b6a9", "#eff7f5"] },
   { id: "ocean", name: "Ocean", description: "Cool blue surfaces with a clear aqua accent.", colors: ["#24405c", "#42b8d0", "#f1f6fb"] },
   { id: "ember", name: "Ember", description: "Warm stone surfaces with a muted terracotta accent.", colors: ["#573b39", "#dc846f", "#fbf3ed"] },
   { id: "dracula", name: "Dracula", description: "A dark coding-inspired palette with lavender, cyan, and vivid pink accents.", colors: ["#282a36", "#bd93f9", "#44475a"] },
@@ -3817,8 +3824,8 @@ function CalendarBlurPreferencePanel() {
   };
 
   return <div className="min-w-0">
-    <h2 className="display text-lg">Blur other weeks</h2>
-    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Blur weeks outside the current one; scrolling clears the blur.</p>
+    <h2 className="display text-lg">Blur other calendar weeks</h2>
+    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">In the training calendar, weeks outside the current one stay blurred until you scroll.</p>
     <div className="mt-3 flex items-center gap-3">
       <span className="text-sm font-semibold text-muted-foreground">{enabled ? "On" : "Off"}</span>
       <button type="button" role="switch" aria-checked={enabled} aria-label="Blur other calendar weeks" disabled={saving} onClick={() => void update()} className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${enabled ? "bg-primary" : "bg-slate-300"}`} data-testid="switch-calendar-blur">
@@ -3827,6 +3834,31 @@ function CalendarBlurPreferencePanel() {
       {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
     </div>
   </div>;
+}
+
+function IntervalsCredentialsForm({ configured, athleteId, onSaved }: { configured: boolean; athleteId: string; onSaved: () => void }) {
+  const [id, setId] = useState(athleteId === "0" ? "" : athleteId);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => { if (athleteId !== "0") setId(athleteId); }, [athleteId]);
+  const save = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setError(""); setNotice(""); try { await dataApi.saveIntervalsCredentials(id.trim(), key.trim()); setKey(""); setNotice("Intervals.icu connected to your account."); onSaved(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save credentials."); } finally { setBusy(false); } };
+  const remove = async () => { setBusy(true); setError(""); try { await dataApi.removeIntervalsCredentials(); setId(""); setKey(""); setNotice("Intervals.icu disconnected."); onSaved(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not remove connection."); } finally { setBusy(false); } };
+  return <form onSubmit={save} className="mt-3 rounded-2xl border border-border bg-background/60 p-4">
+    <h3 className="text-sm font-bold">{configured ? "Update your connection" : "Connect your account"}</h3>
+    <div className="mt-3 rounded-xl bg-secondary/60 p-3 text-xs leading-relaxed text-muted-foreground">
+      <p className="font-semibold text-foreground">Find your Intervals.icu details</p>
+      <ol className="mt-1 list-decimal space-y-1 pl-4">
+        <li><a href="https://intervals.icu/settings" target="_blank" rel="noreferrer" className="font-semibold text-primary underline underline-offset-2">Open Intervals.icu Settings</a> and scroll to the bottom.</li>
+        <li>Under <strong>Developer Settings</strong>, copy your Athlete ID and create or copy an API key.</li>
+        <li>Enter both values below. Keep the leading “i” in your Athlete ID if it appears.</li>
+      </ol>
+    </div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold">Athlete ID<input required value={id} onChange={event=>setId(event.target.value)} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" placeholder="i12345" autoComplete="off"/></label><label className="text-xs font-semibold">API key<input required={!configured} value={key} onChange={event=>setKey(event.target.value)} type="password" className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal" placeholder={configured ? "Enter a new key to replace" : "Paste your personal key"} autoComplete="new-password"/></label></div>
+    <div className="mt-3 flex flex-wrap gap-2"><Button type="submit" disabled={busy || !key.trim()}>{busy ? "Saving…" : configured ? "Save new key" : "Connect Intervals.icu"}</Button>{configured && <Button type="button" variant="secondary" disabled={busy} onClick={()=>void remove()}>Disconnect</Button>}</div>
+    {notice && <p role="status" className="mt-3 text-xs text-emerald-700">{notice}</p>}{error && <p role="alert" className="mt-3 text-xs text-destructive">{error}</p>}
+  </form>;
 }
 
 function SettingsPage() {
@@ -3859,7 +3891,7 @@ function ConnectionsPanel() {
   };
   return (
     <div className="space-y-5">
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,.75fr)]">
+      <div className="grid min-w-0 gap-6">
         <div className="rounded-3xl border border-border bg-card p-6 shadow-sm md:p-8">
           <div className="flex flex-col justify-between gap-4 border-b border-border pb-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
@@ -3869,11 +3901,11 @@ function ConnectionsPanel() {
               <div>
                 <h2 className="text-lg font-bold">Intervals.icu</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {connection.configured ? `Athlete ${connection.athleteId}` : "API key not configured"}
+                  {connection.intervalsConfigured ? `Athlete ${connection.athleteId}` : "Required connection not set up"}
                 </p>
               </div>
             </div>
-            {connection.configured && !connection.error ? <Badge tone="green"><CheckCircle2 size={13} /> Connected</Badge> : <Badge tone="amber"><Info size={13} /> {connection.configured ? "Needs attention" : "Setup needed"}</Badge>}
+            {connection.intervalsConfigured && !connection.intervalsError ? <Badge tone="green"><CheckCircle2 size={13} /> Connected</Badge> : <Badge tone="amber"><Info size={13} /> {connection.intervalsConfigured ? "Needs attention" : "Optional"}</Badge>}
             <Button onClick={() => void sync()} disabled={busy} testId="button-sync-data">
               <RefreshCw size={16} className={busy ? "animate-spin" : ""} /> {busy ? "Syncing…" : "Sync now"}
             </Button>
@@ -3887,7 +3919,7 @@ function ConnectionsPanel() {
             </div>
             <div>
               <p className="mono text-[10px] uppercase tracking-[.14em] text-muted-foreground">
-                Intervals.icu · read-only for now
+                Intervals.icu · required
               </p>
               <ul className="mt-4 space-y-3"><li className="flex items-center gap-2 text-sm"><Check size={15} className="text-emerald-600" />Planned calendar workouts</li><li className="flex items-center gap-2 text-sm"><Check size={15} className="text-emerald-600" />Completed activities</li><li className="flex items-center gap-2 text-sm text-muted-foreground"><X size={15} />Writing workouts back is not enabled</li></ul>
             </div>
@@ -3895,25 +3927,16 @@ function ConnectionsPanel() {
           <div className="flex items-start gap-3 rounded-xl bg-secondary/60 p-4">
             <ShieldCheck size={17} className="mt-0.5 text-primary" />
             <p className="text-xs leading-relaxed text-muted-foreground">
-              The Intervals.icu API key stays in your ignored local .env file and is only read by the server. It is never sent to this browser page.
+Your API key is encrypted before it is saved and only decrypted by the server when syncing your own account. It is never returned to this page.
             </p>
           </div>
-          {connection.error && (
+          {connection.intervalsError && (
             <p role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              Intervals.icu could not be reached: {connection.error}
+              {connection.intervalsError}
             </p>
           )}
-          {!connection.configured && (
-            <div className="mt-4 rounded-xl border border-dashed border-border p-4 text-sm">
-              <p className="font-semibold">Connect your Intervals.icu account</p>
-              <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-                <li>Create a personal API key in Intervals.icu account settings.</li>
-                <li>Add it as <code>INTERVALS_API_KEY=your_key</code> in the repo-root <code>.env</code> file. Do not paste it into chat or this page.</li>
-                <li>Restart the local API server, then select Sync now.</li>
-              </ol>
-            </div>
-          )}
-          {connection.lastSync && (
+          <IntervalsCredentialsForm configured={connection.intervalsConfigured} athleteId={connection.athleteId} onSaved={() => void sync()} />
+          {connection.intervalsConfigured && connection.lastSync && (
             <p className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
               <RefreshCw size={13} /> Last sync{" "}
               {new Date(connection.lastSync).toLocaleTimeString([], {
@@ -3923,17 +3946,7 @@ function ConnectionsPanel() {
             </p>
           )}
         </div>
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center gap-2">
-              <Info size={16} className="text-muted-foreground" />
-              <p className="text-sm font-bold">Backend-only database access</p>
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              The browser talks to your local API. The API reads and writes Supabase, while workouts are read from Intervals.icu. User authentication is not implemented yet; keep this app private on your computer.
-            </p>
-          </div>
-        </div>
+
       </div>
     </div>
   );
@@ -3960,6 +3973,76 @@ function NotFoundPage() {
   );
 }
 
+function MerlinBrand({ dark = false }: { dark?: boolean }) {
+  const base = import.meta.env.BASE_URL;
+  return <div className="flex items-center gap-3" aria-label="Merlin"><img src={`${base}branding/merlin-book-mark-white.png`} alt="" className={`h-9 w-10 object-contain ${dark ? "brightness-0" : ""}`} /><img src={`${base}branding/merlin-wordmark-white.png`} alt="Merlin" className={`h-9 w-28 object-contain object-left ${dark ? "brightness-0" : ""}`} /></div>;
+}
+
+function PublicSite() {
+  const [path, setPath] = useLocation();
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const isSignup = path === "/signup";
+  const isLogin = path === "/login";
+  const isReset = path === "/reset-password";
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
+    try {
+      if (isSignup) {
+        const result = await signUp(email.trim(), password, name.trim());
+        if (!result.session) setMessage("signup-confirmation");
+      } else if (isReset && !resettingPassword) {
+        await sendPasswordReset(email.trim()); setMessage("If an account exists for that address, a password reset link is on its way.");
+      } else if (isReset) {
+        await updatePassword(password); await signOut(); setMessage("Password updated. You can sign in with your new password."); setPassword(""); setResettingPassword(false);
+      } else { await signIn(email.trim(), password); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not complete that request."); }
+    finally { setBusy(false); }
+  };
+  const inputClass = "mt-2 w-full rounded-xl border border-white/15 bg-white/[.06] px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-[#8bd0c7] focus:ring-2 focus:ring-[#8bd0c7]/20";
+  return <div className="min-h-screen bg-[#111a1b] text-[#f5f8f7]">
+    <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-10"><Link href="/"><MerlinBrand /></Link>{(isLogin || isSignup || isReset) && <Link href="/" className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-white/70 transition hover:bg-white/10 hover:text-white"><ArrowLeft size={15}/>Back to home</Link>}</header>
+    {!isLogin && !isSignup && !isReset ? <main>
+      <section className="relative isolate overflow-hidden px-6 pb-20 pt-16 text-center sm:pt-24 lg:pb-28"><div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_10%,rgba(116,190,181,.18),transparent_52%)]"/><h1 className="display mx-auto mt-5 max-w-4xl text-5xl leading-[1.04] tracking-tight sm:text-6xl lg:text-7xl">Train with clarity.</h1><p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-white/65 sm:text-lg">Merlin helps triathletes at every level plan and adapt training with daily check-ins and training data from Intervals.icu. An Intervals.icu connection is required.</p><div className="mt-9 flex flex-wrap justify-center gap-3"><Link href="/signup" className="rounded-xl bg-[#a9d8d1] px-6 py-3.5 text-sm font-bold text-[#143638] shadow-[0_8px_32px_rgba(115,202,190,.18)] hover:bg-[#c0e5df]">Get started free <ArrowRight className="ml-1 inline" size={16}/></Link><Link href="/login" className="rounded-xl border border-white/15 bg-white/[.04] px-6 py-3.5 text-sm font-semibold text-white hover:bg-white/10">Log in</Link></div><p className="mt-4 text-xs text-white/45">Beta version</p></section>
+    </main> : <main className="mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl items-center gap-12 px-6 py-10 lg:grid-cols-[1fr_minmax(22rem,440px)] lg:px-10"><div className="hidden lg:block"><p className="mono text-[11px] uppercase tracking-[.18em] text-[#9bcfc7]">{isSignup ? "Your training, in context" : isReset ? "Account recovery" : "Welcome back"}</p><h1 className="display mt-4 max-w-xl text-5xl leading-tight">{isSignup ? "Build a training rhythm that fits your life." : isReset ? "Get back to your training." : "Your next session is waiting."}</h1></div><section className="w-full rounded-3xl border border-white/10 bg-[#1a2526] p-6 shadow-2xl sm:p-8"><Link href="/" className="lg:hidden"><MerlinBrand/></Link><h2 className="display mt-7 text-3xl">{isSignup ? "Create your account" : isReset ? "Reset your password" : "Log in to Merlin"}</h2><p className="mt-2 text-sm text-white/55">{isSignup ? "Start your free beta account." : isReset ? "Enter your email for a recovery link, or choose a new password from that email." : "Sign in to pick up where you left off."}</p><form onSubmit={submit} className="mt-7 space-y-4">{isSignup && <label className="block text-sm font-medium text-white/85">Name<input required autoComplete="name" value={name} onChange={e=>setName(e.target.value)} className={inputClass} placeholder="Your name"/></label>}<label className="block text-sm font-medium text-white/85">Email<input required type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} className={inputClass} placeholder="you@example.com"/></label>{(!isReset || resettingPassword) && <label className="block text-sm font-medium text-white/85">Password<input required type="password" minLength={8} autoComplete={isSignup ? "new-password" : "current-password"} value={password} onChange={e=>setPassword(e.target.value)} className={inputClass} placeholder={isSignup ? "At least 8 characters" : "Your password"}/></label>}{isReset && <button type="button" onClick={()=>{setResettingPassword(!resettingPassword);setPassword("");}} className="text-xs text-[#a9d8d1]">{resettingPassword ? "Send a reset link instead" : "I have a reset link — set a new password"}</button>}{error && <p role="alert" className="rounded-xl border border-red-300/20 bg-red-950/30 px-3 py-2 text-sm text-red-200">{error}</p>}{message && <p role="status" className="rounded-xl border border-[#a9d8d1]/20 bg-[#a9d8d1]/10 px-3 py-2 text-sm leading-relaxed text-[#c0e5df]">{isSignup && message === "signup-confirmation" ? <>If this email is already registered, <Link href="/login" className="font-semibold underline underline-offset-2">log in</Link> or <Link href="/reset-password" className="font-semibold underline underline-offset-2">reset your password</Link>. Otherwise, check your inbox for a confirmation link.</> : message}</p>}<button disabled={busy||!authConfigured} className="w-full rounded-xl bg-[#a9d8d1] px-4 py-3.5 text-sm font-bold text-[#143638] transition hover:bg-[#c0e5df] disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Please wait…" : isSignup ? "Create account" : isReset ? resettingPassword ? "Update password" : "Send reset link" : "Log in"}</button>{!authConfigured && <p role="alert" className="text-xs text-amber-200">Set the Supabase URL and publishable key in the app environment to enable accounts.</p>}</form><div className="mt-5 flex flex-wrap justify-between gap-3 text-xs"><Link href={isSignup ? "/login" : "/signup"} className="text-[#a9d8d1]">{isSignup ? "Already have an account? Log in" : "New to Merlin? Create an account"}</Link>{isLogin && <Link href="/reset-password" className="text-white/55 hover:text-white">Forgot password?</Link>}{isReset && <Link href="/login" className="text-white/55 hover:text-white">Back to log in</Link>}</div></section></main>}
+  </div>;
+}
+
+function EmailConfirmationPage() {
+  const status = getEmailConfirmationStatus();
+  const confirmed = status === "success";
+  return (
+    <div className="min-h-screen bg-[#111a1b] text-[#f5f8f7]">
+      <header className="mx-auto max-w-7xl px-6 py-5 lg:px-10"><Link href="/"><MerlinBrand /></Link></header>
+      <main className="flex min-h-[calc(100vh-80px)] items-center justify-center px-6 py-10">
+        <section className="w-full max-w-md rounded-3xl border border-white/10 bg-[#1a2526] p-8 text-center shadow-2xl" aria-labelledby="confirmation-heading">
+          {confirmed ? <CheckCircle2 className="mx-auto text-[#a9d8d1]" size={48} /> : <Info className="mx-auto text-[#a9d8d1]" size={48} />}
+          <h1 id="confirmation-heading" className="display mt-6 text-3xl">{confirmed ? "Email confirmed" : status === "error" ? "Email link unavailable" : status === "unavailable" ? "Couldn’t check confirmation" : "Check your inbox"}</h1>
+          <p className="mt-3 text-sm leading-relaxed text-white/65">{confirmed ? "Your email address is verified. You can now log in to Merlin and start your training profile." : status === "error" ? "We couldn’t verify this link. It may have expired or already been used. If you’ve already confirmed your email, you can log in." : status === "unavailable" ? "The confirmation service couldn’t be reached. Your email may already be confirmed. Try logging in, or reopen your email link shortly." : "Open the confirmation link from your signup email to verify your address."}</p>
+          <Link href="/login" className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#a9d8d1] px-4 py-3.5 text-sm font-bold text-[#143638] transition hover:bg-[#c0e5df]">Continue to login <ArrowRight size={16} /></Link>
+          <Link href="/" className="mt-5 inline-block text-xs text-white/55 hover:text-white">Back to home</Link>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function PublicRouter() { return <Switch><Route path="/email-confirmed" component={EmailConfirmationPage}/><Route path="/login" component={PublicSite}/><Route path="/signup" component={PublicSite}/><Route path="/reset-password" component={PublicSite}/><Route component={PublicSite}/></Switch>; }
+
+function App() {
+  const [session, setSession] = useState(getSession);
+  const [ready, setReady] = useState(false);
+  const [recovering, setRecovering] = useState(isPasswordRecovery);
+  useEffect(() => { let active = true; void restoreSession().then(value => { if (active) { setSession(value); setReady(true); } }).catch(() => { if (active) setReady(true); }); const update = () => { setSession(getSession()); setRecovering(isPasswordRecovery()); }; window.addEventListener("merlin-auth-change", update); window.addEventListener("storage", update); return () => { active = false; window.removeEventListener("merlin-auth-change", update); window.removeEventListener("storage", update); }; }, []);
+  if (!ready) return <div className="grid min-h-screen place-items-center bg-[#111a1b] text-sm text-white/60">Loading Merlin…</div>;
+  return session && !recovering ? <AuthenticatedApp/> : <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><PublicRouter/></WouterRouter>;
+}
+
 function Router() {
   return (
     <AppShell>
@@ -3978,8 +4061,14 @@ function Router() {
   );
 }
 
+function AuthenticatedRoutes() {
+  const [location] = useLocation();
+  if (["/login", "/signup", "/reset-password"].includes(location)) return <Redirect to="/" />;
+  return <Router />;
+}
+
 const queryClient = new QueryClient();
-function App() {
+function AuthenticatedApp() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(COLOR_THEME_KEY);
@@ -3995,7 +4084,7 @@ function App() {
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const refreshedRecoveryRecommendationIds = useRef(new Set<string>());
-  const [connection, setConnection] = useState<Connection>({ configured: false, athleteId: "0" });
+  const [connection, setConnection] = useState<Connection>({ configured: false, intervalsConfigured: false, athleteId: "0" });
   const [databaseConnected, setDatabaseConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -4009,13 +4098,14 @@ function App() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [athleteRecord, goals, checkInRecords, recommendationRecords, intervalsStatus] = await Promise.all([
+      const [athleteRecord, goals, checkInRecords, recommendationRecords] = await Promise.all([
         dataApi.athlete(),
         dataApi.goals(),
         dataApi.checkIns(),
         dataApi.recommendations(),
-        dataApi.intervalsStatus(),
       ]);
+      const intervalsResult = await Promise.allSettled([dataApi.intervalsStatus()]);
+      const intervalsStatus = intervalsResult[0].status === "fulfilled" ? intervalsResult[0].value : { configured: false, athleteId: "0" };
       const preferredGoalMode = athleteRecord.preferences?.plan?.goalMode;
       const activeGoal = preferredGoalMode
         ? goals.find((goal) => goal.type === preferredGoalMode)
@@ -4026,31 +4116,28 @@ function App() {
       setRecommendations(recommendationRecords.map(recommendationFromRecord));
       setDatabaseConnected(true);
 
-      if (intervalsStatus.configured) {
-        const [calendarResult, wellnessResult] = await Promise.allSettled([
-          dataApi.intervalsCalendar(shift(-84), shift(180)),
-          dataApi.intervalsWellness(shift(-180), shift(0)),
-        ]);
-        if (calendarResult.status === "fulfilled") {
-          setSessions(sessionsFromIntervals(calendarResult.value.events, calendarResult.value.activities));
-          setConnection({ configured: true, athleteId: intervalsStatus.athleteId, lastSync: calendarResult.value.syncedAt });
-        } else {
-          setSessions([]);
-          setConnection({ configured: true, athleteId: intervalsStatus.athleteId, error: calendarResult.reason instanceof Error ? calendarResult.reason.message : "Could not load Intervals.icu data." });
-        }
-        if (wellnessResult.status === "fulfilled") {
-          setWellness(wellnessResult.value.records.filter((record) => record && typeof record.id === "string").sort((a, b) => b.id.localeCompare(a.id)));
-          setWellnessError(null);
-        } else {
-          setWellness([]);
-          setWellnessError(wellnessResult.reason instanceof Error ? wellnessResult.reason.message : "Could not load Intervals.icu wellness data.");
-        }
-      } else {
-        setSessions([]);
-        setWellness([]);
-        setWellnessError("Connect Intervals.icu to sync wellness metrics.");
-        setConnection({ configured: false, athleteId: intervalsStatus.athleteId });
-      }
+      const [calendarResult, intervalsWellnessResult] = await Promise.allSettled([
+        intervalsStatus.configured ? dataApi.intervalsCalendar(shift(-84), shift(180)) : Promise.resolve(null),
+        intervalsStatus.configured ? dataApi.intervalsWellness(shift(-180), shift(0)) : Promise.resolve(null),
+      ]);
+      const calendar = calendarResult.status === "fulfilled" ? calendarResult.value : null;
+      const wellnessResponse = intervalsWellnessResult.status === "fulfilled" ? intervalsWellnessResult.value : null;
+      const intervalRecords = wellnessResponse?.records ?? [];
+      const syncSucceeded = Boolean(calendar || wellnessResponse);
+      const wellnessRecords = Array.from(new Map<string, IntervalsWellness>(intervalRecords.map((record) => [record.id, record] as const)).values())
+        .filter((record) => Object.entries(record).some(([key, value]) => key !== "id" && value !== null && value !== undefined))
+        .sort((a, b) => b.id.localeCompare(a.id));
+      setSessions(calendar ? sessionsFromIntervals(calendar.events, calendar.activities) : []);
+      setWellness(wellnessRecords);
+      setWellnessError(wellnessRecords.length ? null : intervalsStatus.configured ? "No wellness readings are available from Intervals.icu." : "Connect your required Intervals.icu account to sync wellness metrics.");
+      setConnection({
+        configured: intervalsStatus.configured,
+        intervalsConfigured: intervalsStatus.configured,
+        athleteId: intervalsStatus.athleteId,
+        lastSync: calendar?.syncedAt ?? wellnessResponse?.syncedAt,
+        error: intervalsStatus.configured && !syncSucceeded ? "Connected training data could not be reached." : undefined,
+        intervalsError: intervalsStatus.configured && !calendar ? "Intervals.icu could not be reached." : undefined,
+      });
     } catch (error) {
       setDatabaseConnected(false);
       setLoadError(error instanceof Error ? error.message : "Could not load your Supabase data.");
@@ -4274,7 +4361,7 @@ function App() {
             ) : loadError ? (
               <div className="grid min-h-screen place-items-center p-6"><div className="max-w-md rounded-2xl border border-border bg-card p-6 text-center"><h1 className="display text-2xl">Could not load your data</h1><p className="mt-3 text-sm text-muted-foreground">{loadError}</p><Button onClick={() => void refresh()} variant="secondary" testId="button-retry-data" ><RefreshCw size={15} /> Try again</Button></div></div>
             ) : (
-              <Router />
+              <AuthenticatedRoutes />
             )}
           </AppData.Provider>
         </WouterRouter>

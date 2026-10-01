@@ -33,6 +33,7 @@ const timestamps = {
 
 export const athletes = pgTable("athletes", {
   id: uuid("id").defaultRandom().primaryKey(),
+  authUserId: uuid("auth_user_id").unique(),
   name: text("name").notNull(),
   email: text("email"),
   timezone: text("timezone").default("America/New_York").notNull(),
@@ -40,6 +41,15 @@ export const athletes = pgTable("athletes", {
   preferences: jsonb("preferences").$type<{ coachTone: string; notifications: boolean; plan?: Record<string, unknown> }>().default({ coachTone: "Warm + direct", notifications: true }).notNull(),
   ...timestamps,
 }, (table) => [uniqueIndex("athletes_email_unique").on(table.email)]);
+
+export const userApiCredentials = pgTable("user_api_credentials", {
+  authUserId: uuid("auth_user_id").primaryKey(),
+  intervalsAthleteId: text("intervals_athlete_id").notNull(),
+  apiKeyCiphertext: text("api_key_ciphertext").notNull(),
+  apiKeyIv: text("api_key_iv").notNull(),
+  apiKeyAuthTag: text("api_key_auth_tag").notNull(),
+  ...timestamps,
+});
 
 export const goals = pgTable("goals", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -123,7 +133,7 @@ export const workoutsRelations = relations(workouts, ({ one }) => ({ athlete: on
 export const checkInsRelations = relations(checkIns, ({ one, many }) => ({ athlete: one(athletes, { fields: [checkIns.athleteId], references: [athletes.id] }), recommendations: many(recommendations) }));
 export const recommendationsRelations = relations(recommendations, ({ one }) => ({ athlete: one(athletes, { fields: [recommendations.athleteId], references: [athletes.id] }), checkIn: one(checkIns, { fields: [recommendations.checkInId], references: [checkIns.id] }) }));
 
-export const insertAthleteSchema = createInsertSchema(athletes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAthleteSchema = createInsertSchema(athletes).omit({ id: true, authUserId: true, createdAt: true, updatedAt: true });
 export const insertGoalSchema = createInsertSchema(goals).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertWorkoutSchema = createInsertSchema(workouts).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertCheckInSchema = createInsertSchema(checkIns).omit({ id: true, createdAt: true, updatedAt: true });

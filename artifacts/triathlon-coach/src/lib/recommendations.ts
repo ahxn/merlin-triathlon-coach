@@ -64,7 +64,7 @@ function personalOutliers(date: string, records: WellnessEntry[]) {
         && adverse(current, reference.center, reference.spread);
       if (key === "sleepScore" && current < 80) {
         const rating = current < 60 ? "poor" : "fair";
-        return [`Sleep score is ${rating}${belowReference ? ` and below your long-term ${referenceName}` : ""}${reference.ready ? ` (${reference.count} readings; recent ${excludedDays} days excluded)` : ` (Garmin score band; ${reference.count}/${minimumReadings} long-term readings)`}`];
+        return [`Sleep score is ${rating}${belowReference ? ` and below your long-term ${referenceName}` : ""}${reference.ready ? ` (${reference.count} readings; recent ${excludedDays} days excluded)` : ` (device score band; ${reference.count}/${minimumReadings} long-term readings)`}`];
       }
       if (!reference.ready || reference.center === null || reference.spread === null) return [];
       if (belowReference) return [`${label} is below your longer-term reference (${reference.count} readings; recent ${excludedDays} days excluded)`];

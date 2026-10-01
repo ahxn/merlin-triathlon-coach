@@ -1,37 +1,25 @@
 import express, { type Express } from "express";
 import cors from "cors";
-import pinoHttp from "pino-http";
 import router from "./routes";
-import { logger } from "./lib/logger";
 
 const app: Express = express();
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    console.info("api_request", {
+      method: req.method,
+      path: req.url?.split("?")[0],
+      statusCode: res.statusCode,
+      durationMs: Date.now() - startedAt,
+    });
+  });
+  next();
+});
 const devOrigins = process.env.NODE_ENV === "production"
   ? []
   : ["http://localhost:5173", "http://127.0.0.1:5173"];
-const allowedOrigins = new Set([
-  ...devOrigins,
-  ...(process.env.CORS_ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean),
-]);
+const allowedOrigins = new Set(devOrigins);
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.has(origin)) return callback(null, true);
@@ -50,12 +38,11 @@ app.use((_req, res, next) => {
 });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
 app.use("/api", router);
 
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const code = typeof err === "object" && err !== null && "code" in err && typeof err.code === "string" ? err.code : undefined;
-  logger.error({ name: err instanceof Error ? err.name : "UnknownError", code }, "Unhandled API error");
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : undefined;
+  console.error("Unhandled API error", { name: error instanceof Error ? error.name : "UnknownError", code });
   res.status(500).json({ error: "Internal server error" });
 });
 

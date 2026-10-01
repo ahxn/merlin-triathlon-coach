@@ -1,6 +1,8 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:5001/api";
+import { apiFetch } from "./auth";
 
-export const ATHLETE_ID = "b3bc616f-3d6b-4764-9dd9-5a502faebc52";
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://127.0.0.1:5001/api" : "/api");
+
+export const ATHLETE_ID = "me";
 
 export type RecoveryRhythm = "none" | "2:1" | "3:1" | "4:1" | "custom" | "manual";
 
@@ -251,7 +253,7 @@ export type IntervalsWellness = {
 export type IntervalsWellnessResponse = { records: IntervalsWellness[]; syncedAt: string };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await apiFetch(`${API_BASE}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
@@ -263,6 +265,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const dataApi = {
+  me: () => request<{ userId: string; email: string | null; athleteId: string }>("/auth/me"),
   athlete: (id = ATHLETE_ID) => request<AthleteRecord>(`/athletes/${id}`),
   goals: (id = ATHLETE_ID) => request<GoalRecord[]>(`/athletes/${id}/goals`),
   checkIns: (id = ATHLETE_ID) => request<CheckInRecord[]>(`/athletes/${id}/check-ins`),
@@ -276,6 +279,8 @@ export const dataApi = {
   createRecommendation: (body: Omit<RecommendationRecord, "id" | "createdAt" | "decidedAt">) => request<RecommendationRecord>(`/athletes/${ATHLETE_ID}/recommendations`, { method: "POST", body: JSON.stringify(body) }),
   updateRecommendation: (id: string, body: Partial<RecommendationRecord>) => request<RecommendationRecord>(`/athletes/${ATHLETE_ID}/recommendations/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   intervalsStatus: () => request<IntervalsStatus>("/integrations/intervals/status"),
+  saveIntervalsCredentials: (athleteId: string, apiKey: string) => request<IntervalsStatus>("/integrations/intervals/credentials", { method: "PUT", body: JSON.stringify({ athleteId, apiKey }) }),
+  removeIntervalsCredentials: () => request<void>("/integrations/intervals/credentials", { method: "DELETE" }),
   intervalsAthleteSettings: () => request<IntervalsAthleteSettings>("/integrations/intervals/athlete-settings"),
   intervalsCalendar: (from: string, to: string) => request<IntervalsCalendar>(`/integrations/intervals/calendar?from=${from}&to=${to}`),
   intervalsWellness: (oldest: string, newest: string) => request<IntervalsWellnessResponse>(`/integrations/intervals/wellness?oldest=${oldest}&newest=${newest}`),

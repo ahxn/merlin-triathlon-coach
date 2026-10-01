@@ -1,5 +1,6 @@
 import { Router, type IRouter, type RequestHandler } from "express";
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { requireAuth, scopedAthleteId } from "../lib/auth";
 import {
   athletes,
   checkIns,
@@ -15,6 +16,7 @@ import {
 } from "@workspace/db";
 
 const router: IRouter = Router();
+router.use(requireAuth);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const asyncRoute = (handler: RequestHandler): RequestHandler => (req, res, next) => {
@@ -26,15 +28,8 @@ const athleteIdFrom = (value: string | string[] | undefined) => {
   return value;
 };
 
-router.post("/athletes", asyncRoute(async (req, res) => {
-  const parsed = insertAthleteSchema.safeParse(req.body);
-  if (!parsed.success) return void res.status(400).json({ error: "Invalid athlete", issues: parsed.error.issues });
-  const [athlete] = await db.insert(athletes).values(parsed.data).returning();
-  res.status(201).json(athlete);
-}));
-
 router.get("/athletes/:athleteId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const athlete = await db.query.athletes.findFirst({ where: eq(athletes.id, athleteId) });
   if (!athlete) return void res.status(404).json({ error: "Athlete not found" });
@@ -42,9 +37,9 @@ router.get("/athletes/:athleteId", asyncRoute(async (req, res) => {
 }));
 
 router.patch("/athletes/:athleteId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
-  const parsed = insertAthleteSchema.partial().safeParse(req.body);
+  const parsed = insertAthleteSchema.omit({ email: true }).partial().safeParse(req.body);
   if (!parsed.success) return void res.status(400).json({ error: "Invalid athlete", issues: parsed.error.issues });
   const [athlete] = await db.update(athletes).set({ ...parsed.data, updatedAt: new Date() }).where(eq(athletes.id, athleteId)).returning();
   if (!athlete) return void res.status(404).json({ error: "Athlete not found" });
@@ -52,13 +47,13 @@ router.patch("/athletes/:athleteId", asyncRoute(async (req, res) => {
 }));
 
 router.get("/athletes/:athleteId/goals", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   res.json(await db.select().from(goals).where(eq(goals.athleteId, athleteId)).orderBy(asc(goals.targetDate)));
 }));
 
 router.post("/athletes/:athleteId/goals", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const parsed = insertGoalSchema.safeParse({ ...req.body, athleteId });
   if (!parsed.success) return void res.status(400).json({ error: "Invalid goal", issues: parsed.error.issues });
@@ -67,10 +62,10 @@ router.post("/athletes/:athleteId/goals", asyncRoute(async (req, res) => {
 }));
 
 router.patch("/athletes/:athleteId/goals/:goalId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   const goalId = athleteIdFrom(req.params.goalId);
   if (!athleteId || !goalId) return void res.status(400).json({ error: "Invalid id" });
-  const parsed = insertGoalSchema.partial().safeParse(req.body);
+  const parsed = insertGoalSchema.omit({ athleteId: true }).partial().safeParse(req.body);
   if (!parsed.success) return void res.status(400).json({ error: "Invalid goal", issues: parsed.error.issues });
   const [goal] = await db.update(goals).set({ ...parsed.data, updatedAt: new Date() }).where(and(eq(goals.id, goalId), eq(goals.athleteId, athleteId))).returning();
   if (!goal) return void res.status(404).json({ error: "Goal not found" });
@@ -78,7 +73,7 @@ router.patch("/athletes/:athleteId/goals/:goalId", asyncRoute(async (req, res) =
 }));
 
 router.get("/athletes/:athleteId/workouts", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const filters = [eq(workouts.athleteId, athleteId)];
   if (typeof req.query.from === "string") filters.push(gte(workouts.scheduledDate, req.query.from));
@@ -87,7 +82,7 @@ router.get("/athletes/:athleteId/workouts", asyncRoute(async (req, res) => {
 }));
 
 router.post("/athletes/:athleteId/workouts", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const parsed = insertWorkoutSchema.safeParse({ ...req.body, athleteId });
   if (!parsed.success) return void res.status(400).json({ error: "Invalid workout", issues: parsed.error.issues });
@@ -96,13 +91,13 @@ router.post("/athletes/:athleteId/workouts", asyncRoute(async (req, res) => {
 }));
 
 router.get("/athletes/:athleteId/check-ins", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   res.json(await db.select().from(checkIns).where(eq(checkIns.athleteId, athleteId)).orderBy(desc(checkIns.checkInDate)));
 }));
 
 router.post("/athletes/:athleteId/check-ins", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const parsed = insertCheckInSchema.safeParse({ ...req.body, athleteId });
   if (!parsed.success) return void res.status(400).json({ error: "Invalid check-in", issues: parsed.error.issues });
@@ -114,7 +109,7 @@ router.post("/athletes/:athleteId/check-ins", asyncRoute(async (req, res) => {
 }));
 
 router.patch("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   const checkInId = athleteIdFrom(req.params.checkInId);
   if (!athleteId || !checkInId) return void res.status(400).json({ error: "Invalid id" });
   const parsed = insertCheckInSchema.partial().safeParse({ ...req.body, athleteId });
@@ -126,7 +121,7 @@ router.patch("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req,
 }));
 
 router.delete("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   const checkInId = athleteIdFrom(req.params.checkInId);
   if (!athleteId || !checkInId) return void res.status(400).json({ error: "Invalid id" });
   const [deleted] = await db.delete(checkIns).where(and(eq(checkIns.id, checkInId), eq(checkIns.athleteId, athleteId))).returning({ id: checkIns.id });
@@ -135,13 +130,13 @@ router.delete("/athletes/:athleteId/check-ins/:checkInId", asyncRoute(async (req
 }));
 
 router.get("/athletes/:athleteId/recommendations", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   res.json(await db.select().from(recommendations).where(eq(recommendations.athleteId, athleteId)).orderBy(desc(recommendations.createdAt)));
 }));
 
 router.post("/athletes/:athleteId/recommendations", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   if (!athleteId) return void res.status(400).json({ error: "Invalid athlete id" });
   const parsed = insertRecommendationSchema.safeParse({ ...req.body, athleteId });
   if (!parsed.success) return void res.status(400).json({ error: "Invalid recommendation", issues: parsed.error.issues });
@@ -150,10 +145,10 @@ router.post("/athletes/:athleteId/recommendations", asyncRoute(async (req, res) 
 }));
 
 router.patch("/athletes/:athleteId/recommendations/:recommendationId", asyncRoute(async (req, res) => {
-  const athleteId = athleteIdFrom(req.params.athleteId);
+  const athleteId = scopedAthleteId(req.params.athleteId, req);
   const recommendationId = athleteIdFrom(req.params.recommendationId);
   if (!athleteId || !recommendationId) return void res.status(400).json({ error: "Invalid id" });
-  const parsed = insertRecommendationSchema.partial().safeParse(req.body);
+  const parsed = insertRecommendationSchema.omit({ athleteId: true, checkInId: true }).partial().safeParse(req.body);
   if (!parsed.success) return void res.status(400).json({ error: "Invalid recommendation", issues: parsed.error.issues });
   const decidedAt = parsed.data.status && parsed.data.status !== "pending" ? new Date() : null;
   const [recommendation] = await db.update(recommendations).set({ ...parsed.data, decidedAt, updatedAt: new Date() }).where(and(eq(recommendations.id, recommendationId), eq(recommendations.athleteId, athleteId))).returning();

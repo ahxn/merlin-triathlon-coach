@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "merlin",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../triathlon-coach/dist/public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/__poc/*"],
+    "not_found_handling": "single-page-application"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "247a0b3d1a37423f9486dd16dec05c36"
+    }
+  ],
+  "vars": {
+    "NODE_ENV": "production"
+  }
+}
