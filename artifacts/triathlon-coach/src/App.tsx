@@ -1111,7 +1111,7 @@ function AppShell({ children }: { children: ReactNode }) {
               ? <CheckCircle2 size={17} strokeWidth={1.8} className="mt-0.5 shrink-0 text-emerald-300" />
               : <Info size={17} strokeWidth={1.8} className="mt-0.5 shrink-0 text-amber-300" />}
             <div className="min-w-0">
-              <p className="text-sm text-sidebar-foreground/80">{connection.intervalsConfigured ? "Intervals.icu" : "No data connection"}</p>
+              <p className="text-[15px] leading-5 text-sidebar-foreground/80">{connection.intervalsConfigured ? "Intervals.icu" : "No data connection"}</p>
               <p className="mt-0.5 text-[10px] leading-tight text-sidebar-foreground/55">
                 {connection.lastSync
                   ? `Last sync · ${new Date(connection.lastSync).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
@@ -1125,18 +1125,18 @@ function AppShell({ children }: { children: ReactNode }) {
               href={href}
               onClick={() => setMobileOpen(false)}
               data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`}
-              className={`nav-link mb-0.5 flex items-center gap-3 rounded-xl px-3 py-2 text-sm ${isActive(href) ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"}`}
+              className={`nav-link mb-0.5 flex items-center gap-3 rounded-xl px-3 py-2 text-[15px] leading-5 ${isActive(href) ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"}`}
             >
               <Icon size={17} strokeWidth={1.8} />
               {label}
             </Link>
           ))}
-          <button type="button" onClick={() => { void signOut().then(() => setLocation("/login")); }} className="nav-link mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left font-sans text-sm font-normal leading-5 text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"><LogOut size={17} strokeWidth={1.8} />Sign out</button>
+          <button type="button" onClick={() => { void signOut().then(() => setLocation("/login")); }} className="nav-link mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left font-sans text-[15px] font-normal leading-5 text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"><LogOut size={17} strokeWidth={1.8} />Sign out</button>
           <Link
             href="/profile"
             onClick={() => setMobileOpen(false)}
             data-testid="link-header-profile"
-            className={`nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm ${isActive("/profile") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"}`}
+            className={`nav-link flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] leading-5 ${isActive("/profile") ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/65 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground"}`}
           >
             <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-sidebar-foreground/20 text-[10px] font-bold text-sidebar-foreground">{initials}</span>
             <span className="min-w-0 truncate">{athlete.name || "Athlete"}</span>
@@ -3905,10 +3905,12 @@ function ConnectionsPanel() {
                 </p>
               </div>
             </div>
-            {connection.intervalsConfigured && !connection.intervalsError ? <Badge tone="green"><CheckCircle2 size={13} /> Connected</Badge> : <Badge tone="amber"><Info size={13} /> {connection.intervalsConfigured ? "Needs attention" : "Optional"}</Badge>}
-            <Button onClick={() => void sync()} disabled={busy} testId="button-sync-data">
-              <RefreshCw size={16} className={busy ? "animate-spin" : ""} /> {busy ? "Syncing…" : "Sync now"}
-            </Button>
+            <div className="flex items-center gap-3 sm:ml-auto">
+              {connection.intervalsConfigured && !connection.intervalsError ? <Badge tone="green"><CheckCircle2 size={13} /> Connected</Badge> : <Badge tone="amber"><Info size={13} /> {connection.intervalsConfigured ? "Needs attention" : "Mandatory"}</Badge>}
+              <Button onClick={() => void sync()} disabled={busy} testId="button-sync-data">
+                <RefreshCw size={16} className={busy ? "animate-spin" : ""} /> {busy ? "Syncing…" : "Sync now"}
+              </Button>
+            </div>
           </div>
           <div className="grid gap-7 py-7 md:grid-cols-2">
             <div>
